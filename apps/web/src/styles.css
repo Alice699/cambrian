@@ -253,12 +253,16 @@ button { cursor: pointer; }
 .organism-meta { margin: 0; color: var(--moss); font: 600 11px/16px "IBM Plex Sans", sans-serif; letter-spacing: 1.1px; }
 .organism-description { max-width: 520px; margin: 22px 0 0; font: 400 16px/24px "IBM Plex Sans", sans-serif; }
 .organisms-thumbnail { position: absolute; top: 42px; right: 50px; display: block; width: 82px; height: 82px; }
+.organism-read-state h2 { margin: 22px 0 0; font: 600 28px/34px "Space Grotesk", sans-serif; letter-spacing: -1px; }
 .activity-panel { padding: 23px; border: 1px solid var(--line); background: var(--canvas); }
 .activity-row { display: flex; align-items: flex-start; gap: 14px; margin-top: 28px; }
 .activity-row:first-of-type { margin-top: 28px; }
 .activity-row > div { display: grid; gap: 2px; }
 .activity-row strong { font: 400 16px/24px "IBM Plex Sans", sans-serif; }
 .activity-row span { color: var(--moss); font: 600 11px/16px "IBM Plex Sans", sans-serif; letter-spacing: 1.1px; }
+.activity-read-state { display: grid; gap: 7px; margin-top: 28px; }
+.activity-read-state strong { font: 600 16px/22px "IBM Plex Sans", sans-serif; }
+.activity-read-state span { color: #69736d; font-size: 14px; line-height: 21px; }
 .notice {
   position: fixed;
   right: 24px;
@@ -279,6 +283,11 @@ button { cursor: pointer; }
 .inner-page-header h1 { margin: 13px 0 10px; font: 600 clamp(36px, 3.1vw, 52px)/1 "Space Grotesk", sans-serif; letter-spacing: -2.5px; }
 .inner-page-header > div:first-child > p:last-child { max-width: 610px; margin: 0; color: #69736d; font: 400 17px/26px "IBM Plex Sans", sans-serif; }
 .inner-page-action { flex: 0 0 auto; padding-bottom: 2px; }
+.data-state-card { display: grid; gap: 10px; min-height: 170px; align-content: center; padding: 30px 32px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); }
+.data-state-card > span { color: var(--oxide); font: 600 10px/14px "IBM Plex Sans", sans-serif; letter-spacing: 1px; }
+.data-state-card > strong { font: 600 26px/32px "Space Grotesk", sans-serif; letter-spacing: -1px; }
+.data-state-card > p { max-width: 640px; margin: 0; color: #69736d; font-size: 15px; line-height: 23px; }
+.data-state-card.is-error { border-color: rgba(154, 74, 56, .48); }
 .oxide-button { min-height: 44px; padding: 0 18px; border: 0; border-radius: 999px; background: var(--oxide); color: var(--on-stage); font: 600 14px/20px "IBM Plex Sans", sans-serif; }
 .oxide-button:hover { background: #ad5945; }
 .oxide-button span { margin-left: 7px; }

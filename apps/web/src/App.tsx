@@ -1,12 +1,19 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { AccountView } from "@thru/sdk";
 import { useThru, useWallet } from "@thru/wallet/react";
+import {
+  listAccountTransactions,
+  listCambrianOrganisms,
+  readAccountSnapshot,
+  type CambrianOrganismRecord,
+  type CambrianTransactionSummary,
+} from "@cambrian/sdk";
 import { walletMetadata } from "@cambrian/wallet-core";
 import markAsset from "./assets/cambrian-mark.svg";
 import networkDotAsset from "./assets/hero-organism.svg";
 import heroOrganismAsset from "./assets/organisms-thumbnail.svg";
 import organismsThumbnailAsset from "./assets/network-dot.svg";
 import birthDotAsset from "./assets/activity-birth-dot.svg";
+import { appConfig } from "./config";
 
 type Notice = "faucet" | "birth" | null;
 type Route = "landing" | "dashboard" | "organisms" | "activity" | "learn";
@@ -97,9 +104,9 @@ function WalletChip() {
     }
 
     setBalance(null);
-    thru.accounts.get(address, { view: AccountView.META_ONLY })
+    readAccountSnapshot(thru, address)
       .then((account) => {
-        if (active) setBalance(account.meta?.balance.toString() ?? "0");
+        if (active) setBalance(account.balance?.toString() ?? "0");
       })
       .catch(() => {
         if (active) setBalance(null);
@@ -151,6 +158,158 @@ function WalletChip() {
   );
 }
 
+type OrganismReadStatus = "idle" | "loading" | "ready" | "empty" | "not-configured" | "error";
+
+interface OrganismReadState {
+  status: OrganismReadStatus;
+  organisms: CambrianOrganismRecord[];
+  unreadableAccounts: Array<{ address: string; reason: string }>;
+  error: string | null;
+}
+
+function useOrganismCollection(): OrganismReadState {
+  const { thru } = useThru();
+  const [state, setState] = useState<OrganismReadState>({
+    status: appConfig.programId ? "idle" : "not-configured",
+    organisms: [],
+    unreadableAccounts: [],
+    error: null,
+  });
+
+  useEffect(() => {
+    let active = true;
+
+    if (!appConfig.programId) {
+      setState({ status: "not-configured", organisms: [], unreadableAccounts: [], error: null });
+      return () => {
+        active = false;
+      };
+    }
+
+    if (!thru) {
+      setState((current) => ({ ...current, status: "idle", error: null }));
+      return () => {
+        active = false;
+      };
+    }
+
+    setState({ status: "loading", organisms: [], unreadableAccounts: [], error: null });
+    listCambrianOrganisms(thru, appConfig)
+      .then((result) => {
+        if (!active) return;
+        setState({
+          status: result.organisms.length > 0 ? "ready" : "empty",
+          organisms: result.organisms,
+          unreadableAccounts: result.unreadableAccounts,
+          error: null,
+        });
+      })
+      .catch((error) => {
+        if (!active) return;
+        setState({
+          status: "error",
+          organisms: [],
+          unreadableAccounts: [],
+          error: error instanceof Error ? error.message : "Could not read Cambrian organisms",
+        });
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [thru]);
+
+  return state;
+}
+
+type ActivityReadStatus = "idle" | "loading" | "ready" | "empty" | "needs-wallet" | "error";
+
+interface ActivityReadState {
+  status: ActivityReadStatus;
+  transactions: CambrianTransactionSummary[];
+  error: string | null;
+}
+
+function useAccountTransactions(): ActivityReadState {
+  const { thru } = useThru();
+  const { selectedAccount } = useWallet();
+  const address = selectedAccount?.address;
+  const [state, setState] = useState<ActivityReadState>({
+    status: address ? "idle" : "needs-wallet",
+    transactions: [],
+    error: null,
+  });
+
+  useEffect(() => {
+    let active = true;
+
+    if (!address) {
+      setState({ status: "needs-wallet", transactions: [], error: null });
+      return () => {
+        active = false;
+      };
+    }
+
+    if (!thru) {
+      setState({ status: "idle", transactions: [], error: null });
+      return () => {
+        active = false;
+      };
+    }
+
+    setState({ status: "loading", transactions: [], error: null });
+    listAccountTransactions(thru, address)
+      .then((result) => {
+        if (!active) return;
+        setState({
+          status: result.transactions.length > 0 ? "ready" : "empty",
+          transactions: result.transactions,
+          error: null,
+        });
+      })
+      .catch((error) => {
+        if (!active) return;
+        setState({
+          status: "error",
+          transactions: [],
+          error: error instanceof Error ? error.message : "Could not read account activity",
+        });
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [address, thru]);
+
+  return state;
+}
+
+function ReadStateCard({ title, description, tone = "neutral" }: { title: string; description: string; tone?: "neutral" | "error" }) {
+  return (
+    <div className={"data-state-card " + (tone === "error" ? "is-error" : "")} role={tone === "error" ? "alert" : undefined}>
+      <span>READ-ONLY NETWORK DATA</span>
+      <strong>{title}</strong>
+      <p>{description}</p>
+    </div>
+  );
+}
+
+function organismStatusCopy(status: OrganismReadStatus, error: string | null) {
+  if (status === "not-configured") return ["Deployment pending", "Set the fresh Cambrian program ID before querying organism accounts."] as const;
+  if (status === "loading") return ["Reading Betanet", "Looking for accounts owned by the configured Cambrian program."] as const;
+  if (status === "empty") return ["No organisms found", "The Betanet query returned no Cambrian organism accounts yet."] as const;
+  if (status === "error") return ["Read failed", error ?? "The Betanet read request could not be completed."] as const;
+  return ["No organism data", "Connect the fresh program deployment to make organism state available here."] as const;
+}
+
+function activityStatusCopy(status: ActivityReadStatus, error: string | null) {
+  if (status === "needs-wallet") return ["Connect a wallet", "Account activity appears after a wallet address is selected."] as const;
+  if (status === "loading") return ["Reading account trail", "Loading transactions from the Thru Betanet RPC."] as const;
+  if (status === "empty") return ["No transactions yet", "This account has no transaction records returned by the Betanet query."] as const;
+  if (status === "error") return ["Read failed", error ?? "The account activity request could not be completed."] as const;
+  return ["No activity data", "Select a wallet account to read its transaction trail."] as const;
+}
+
 function EcosystemStage({ onBirth }: { onBirth: () => void }) {
   return (
     <section className="ecosystem-stage" aria-labelledby="ecosystem-title">
@@ -178,25 +337,50 @@ function StatCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-function OrganismsPanel() {
+function OrganismsPanel({ organism, status, error }: { organism?: CambrianOrganismRecord; status: OrganismReadStatus; error: string | null }) {
+  const state = organism?.state;
+  const statusCopy = organismStatusCopy(status, error);
+
   return (
     <section className="organisms-panel" id="organisms" aria-labelledby="organisms-title">
       <p className="panel-label">YOUR ORGANISMS</p>
-      <h2 id="organisms-title">CMB-001 / First Light</h2>
-      <p className="organism-meta">GENES 78&nbsp; / &nbsp;MEMORY 41&nbsp; / &nbsp;CONTROLLER YOU</p>
-      <p className="organism-description">A small, stable read model first. The richer 3D organism can grow as the chain state becomes useful.</p>
-      <img className="organisms-thumbnail" src={organismsThumbnailAsset} width="82" height="82" alt="First Light organism thumbnail" />
+      {organism && state ? (
+        <>
+          <h2 id="organisms-title">Cambrian organism</h2>
+          <p className="organism-meta">GENERATION {state.generation}&nbsp; / &nbsp;PULSES {state.pulseCount.toString()}&nbsp; / &nbsp;{shortenAddress(organism.address)}</p>
+          <p className="organism-description">Live account data read from the Cambrian program on Thru Betanet. The organism viewer will become state-driven after the read model is stable.</p>
+        </>
+      ) : (
+        <div className="organism-read-state">
+          <h2 id="organisms-title">{statusCopy[0]}</h2>
+          <p className="organism-description">{statusCopy[1]}</p>
+        </div>
+      )}
+      {organism && <img className="organisms-thumbnail" src={organismsThumbnailAsset} width="82" height="82" alt="Cambrian organism thumbnail" />}
     </section>
   );
 }
 
-function ActivityPanel() {
+function ActivityPanel({ transactions, status, error }: { transactions: CambrianTransactionSummary[]; status: ActivityReadStatus; error: string | null }) {
+  const statusCopy = activityStatusCopy(status, error);
+
   return (
     <section className="activity-panel" id="activity" aria-labelledby="activity-title">
       <p className="panel-label" id="activity-title">RECENT ACTIVITY</p>
-      <div className="activity-row"><NetworkDot birth /><div><strong>Birth</strong><span>confirmed&nbsp; / &nbsp;2m</span></div></div>
-      <div className="activity-row"><NetworkDot /><div><strong>Pulse</strong><span>confirmed&nbsp; / &nbsp;8m</span></div></div>
-      <div className="activity-row"><NetworkDot /><div><strong>Faucet</strong><span>confirmed&nbsp; / &nbsp;1h</span></div></div>
+      {transactions.length > 0 ? transactions.slice(0, 3).map((transaction, index) => (
+        <div className="activity-row" key={transaction.signature || transaction.program + "-" + index}>
+          <NetworkDot birth={index === 0} />
+          <div>
+            <strong>Transaction</strong>
+            <span>{transaction.signature ? shortenAddress(transaction.signature) : "Signature unavailable"}&nbsp; / &nbsp;{transaction.slot ? "slot " + transaction.slot.toString() : "pending slot"}</span>
+          </div>
+        </div>
+      )) : (
+        <div className="activity-read-state">
+          <strong>{statusCopy[0]}</strong>
+          <span>{statusCopy[1]}</span>
+        </div>
+      )}
     </section>
   );
 }
@@ -239,6 +423,9 @@ function DashboardFrame({ activeRoute, children, notice, onDismiss }: { activeRo
 
 function DashboardPage() {
   const [notice, setNotice] = useState<Notice>(null);
+  const organismRead = useOrganismCollection();
+  const activityRead = useAccountTransactions();
+  const organism = organismRead.organisms[0];
 
   return (
     <DashboardFrame activeRoute="dashboard" notice={notice} onDismiss={() => setNotice(null)}>
@@ -258,15 +445,15 @@ function DashboardPage() {
       <section className="signal-section" aria-labelledby="signal-title">
         <h2 id="signal-title">Signal</h2>
         <div className="stats-grid">
-          <StatCard label="Energy" value="84" />
-          <StatCard label="Vitality" value="92" />
-          <StatCard label="On-chain actions" value="12" />
+          <StatCard label="Energy" value={organism ? organism.state.energy.toString() : "—"} />
+          <StatCard label="Vitality" value={organism ? organism.state.vitality.toString() : "—"} />
+          <StatCard label="On-chain actions" value={activityRead.transactions.length > 0 ? activityRead.transactions.length.toString() : "—"} />
         </div>
       </section>
 
       <div className="dashboard-panels">
-        <OrganismsPanel />
-        <ActivityPanel />
+        <OrganismsPanel organism={organism} status={organismRead.status} error={organismRead.error} />
+        <ActivityPanel transactions={activityRead.transactions} status={activityRead.status} error={activityRead.error} />
       </div>
     </DashboardFrame>
   );
@@ -282,43 +469,76 @@ function InnerPageHeader({ label, title, description, action }: { label: string;
 }
 
 function OrganismsPage() {
+  const organismRead = useOrganismCollection();
+  const organism = organismRead.organisms[0];
+  const statusCopy = organismStatusCopy(organismRead.status, organismRead.error);
+
   return (
     <DashboardFrame activeRoute="organisms">
       <InnerPageHeader
         label="ORGANISMS / COLLECTION"
         title="The living collection"
         description="Track the organisms you have brought to life and the state they carry across the Thru Betanet."
-        action={<button className="oxide-button" type="button">Birth new organism</button>}
+        action={<span className="connected-badge"><i /> READ-ONLY</span>}
       />
-      <section className="organism-focus-card" aria-labelledby="focus-organism-title">
-        <div><p className="panel-label">SELECTED ORGANISM / CMB-001</p><h2 id="focus-organism-title">First Light</h2><p>A stable first form with room to evolve. Its identity, memory, and controller remain legible at every step.</p><div className="focus-meta"><span>GENES <b>78</b></span><span>MEMORY <b>41</b></span><span>PHASE <b>01</b></span></div></div>
-        <div className="focus-organism-view"><img src={heroOrganismAsset} width="210" height="190" alt="First Light organism" /><span>3D VIEWER / PHASE 1</span></div>
-      </section>
-      <section className="trait-section" aria-label="Organism traits">
-        <article><span>ENERGY</span><strong>84</strong><p>Available for the next pulse.</p></article>
-        <article><span>VITALITY</span><strong>92</strong><p>Stable across the last 18 slots.</p></article>
-        <article><span>CONTROLLER</span><strong>YOU</strong><p>Access stays with your wallet.</p></article>
-      </section>
-      <section className="collection-note"><p className="panel-label">NEXT TRACE</p><h2>Every pulse leaves a readable mark.</h2><p>Use Activity to inspect the full trail, or return here when you are ready to grow the collection.</p></section>
+      {organism ? (
+        <>
+          <section className="organism-focus-card" aria-labelledby="focus-organism-title">
+            <div>
+              <p className="panel-label">SELECTED ORGANISM / {shortenAddress(organism.address)}</p>
+              <h2 id="focus-organism-title">Cambrian organism</h2>
+              <p>Live state decoded from the account data owned by the configured Cambrian program.</p>
+              <div className="focus-meta">
+                <span>GENERATION <b>{organism.state.generation}</b></span>
+                <span>PULSES <b>{organism.state.pulseCount.toString()}</b></span>
+                <span>ACCOUNT <b>{shortenAddress(organism.address)}</b></span>
+              </div>
+            </div>
+            <div className="focus-organism-view"><img src={heroOrganismAsset} width="210" height="190" alt="Cambrian organism state viewer" /><span>3D VIEWER / READ MODEL</span></div>
+          </section>
+          <section className="trait-section" aria-label="Organism traits">
+            <article><span>ENERGY</span><strong>{organism.state.energy.toString()}</strong><p>Value read from the current account state.</p></article>
+            <article><span>VITALITY</span><strong>{organism.state.vitality.toString()}</strong><p>Value read from the current account state.</p></article>
+            <article><span>PULSE COUNT</span><strong>{organism.state.pulseCount.toString()}</strong><p>Actions recorded by the organism.</p></article>
+          </section>
+          <section className="collection-note"><p className="panel-label">NEXT TRACE</p><h2>Every pulse leaves a readable mark.</h2><p>Use Activity to inspect the account trail. Transaction actions will be enabled after the fresh program deployment is verified.</p></section>
+        </>
+      ) : (
+        <ReadStateCard title={statusCopy[0]} description={statusCopy[1]} tone={organismRead.status === "error" ? "error" : "neutral"} />
+      )}
     </DashboardFrame>
   );
 }
 
-function ActivityTimeline() {
-  const events = [
-    ["Birth", "CMB-001 / First Light", "Confirmed / 2 minutes ago", true],
-    ["Pulse", "Energy +4 / Vitality +2", "Confirmed / 8 minutes ago", false],
-    ["Faucet", "100 THRU testnet allocation", "Confirmed / 1 hour ago", false],
-    ["Wallet created", "0x7E1A...B42C", "Confirmed / 1 hour ago", false],
-  ] as const;
-  return <div className="activity-timeline">{events.map(([title, detail, time, birth]) => <div className="timeline-item" key={title}><div className={`timeline-marker ${birth ? "birth" : ""}`}><NetworkDot birth={birth} /></div><div className="timeline-copy"><strong>{title}</strong><span>{detail}</span><small>{time}</small></div><a href="https://scan.thru.org/" target="_blank" rel="noreferrer">View details</a></div>)}</div>;
+function ActivityTimeline({ transactions }: { transactions: CambrianTransactionSummary[] }) {
+  return (
+    <div className="activity-timeline">
+      {transactions.map((transaction, index) => (
+        <div className="timeline-item" key={transaction.signature || transaction.program + "-" + index}>
+          <div className="timeline-marker"><NetworkDot /></div>
+          <div className="timeline-copy">
+            <strong>Transaction</strong>
+            <span>{transaction.signature ? shortenAddress(transaction.signature) : "Signature unavailable"} / {shortenAddress(transaction.program)}</span>
+            <small>{transaction.slot ? "Slot " + transaction.slot.toString() : "Slot unavailable"} / {transaction.instructionBytes} instruction bytes</small>
+          </div>
+          <a href={appConfig.explorerUrl} target="_blank" rel="noreferrer">Open explorer</a>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function ActivityPage() {
+  const activityRead = useAccountTransactions();
+  const statusCopy = activityStatusCopy(activityRead.status, activityRead.error);
+
   return (
     <DashboardFrame activeRoute="activity">
-      <InnerPageHeader label="ACTIVITY / ON-CHAIN TRAIL" title="A clear chain of events" description="Every approval, faucet claim, and organism action is kept in one readable trail." action={<span className="connected-badge"><i /> 4 CONFIRMED</span>} />
-      <section className="activity-page-card"><div className="activity-card-heading"><div><p className="panel-label">RECENT ACTIVITY</p><h2>What happened next</h2></div><span>BETANET / LIVE READ</span></div><ActivityTimeline /></section>
+      <InnerPageHeader label="ACTIVITY / ON-CHAIN TRAIL" title="A clear chain of events" description="Every account transaction is read from Thru Betanet and kept visible without inventing confirmation states." action={<span className="connected-badge"><i /> {activityRead.transactions.length > 0 ? activityRead.transactions.length + " READ" : "RPC READ"}</span>} />
+      <section className="activity-page-card">
+        <div className="activity-card-heading"><div><p className="panel-label">RECENT ACTIVITY</p><h2>What happened next</h2></div><span>BETANET / LIVE READ</span></div>
+        {activityRead.transactions.length > 0 ? <ActivityTimeline transactions={activityRead.transactions} /> : <ReadStateCard title={statusCopy[0]} description={statusCopy[1]} tone={activityRead.status === "error" ? "error" : "neutral"} />}
+      </section>
       <section className="trail-callout"><span>ON-CHAIN TRANSPARENCY</span><p>Nothing disappears behind a spinner. When a transaction is submitted, its state and explorer trail remain visible.</p><a href="https://scan.thru.org/" target="_blank" rel="noreferrer">Open Thru explorer</a></section>
     </DashboardFrame>
   );

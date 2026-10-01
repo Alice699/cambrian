@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "vite apps/web --host 127.0.0.1",
     "build": "vite build apps/web",
+    "test": "node --test --experimental-strip-types tests/cambrian-sdk.test.ts",
     "typecheck": "tsc -p apps/web/tsconfig.json --noEmit",
     "preview": "vite preview apps/web --host 127.0.0.1"
   },
