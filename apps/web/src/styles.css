@@ -164,6 +164,19 @@ button { cursor: pointer; }
   background: var(--surface);
   box-shadow: var(--shadow);
 }
+
+.wallet-chip {
+  border: 0;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.wallet-chip:focus-visible {
+  outline: 2px solid var(--oxide);
+  outline-offset: 3px;
+}
 .wallet-chip strong, .wallet-chip span { display: block; }
 .wallet-chip strong { font: 600 11px/16px "IBM Plex Sans", sans-serif; letter-spacing: 1.1px; }
 .wallet-chip span { font: 400 16px/24px "IBM Plex Sans", sans-serif; }

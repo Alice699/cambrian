@@ -3,9 +3,14 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "vite apps/web --host 127.0.0.1",
     "build": "vite build apps/web",
+    "typecheck": "tsc -p apps/web/tsconfig.json --noEmit",
     "preview": "vite preview apps/web --host 127.0.0.1"
   },
   "dependencies": {
@@ -13,6 +18,8 @@
     "@fontsource/space-grotesk": "^5.3.0",
     "@react-three/drei": "^10.7.9",
     "@react-three/fiber": "^9.8.1",
+    "@thru/sdk": "^0.4.0",
+    "@thru/wallet": "^0.4.0",
     "@types/three": "^0.186.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

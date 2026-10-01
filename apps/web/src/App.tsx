@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { AccountView } from "@thru/sdk";
+import { useThru, useWallet } from "@thru/wallet/react";
+import { walletMetadata } from "@cambrian/wallet-core";
 import markAsset from "./assets/cambrian-mark.svg";
 import networkDotAsset from "./assets/hero-organism.svg";
 import heroOrganismAsset from "./assets/organisms-thumbnail.svg";
@@ -68,15 +71,73 @@ function Sidebar({ activeRoute }: { activeRoute: Exclude<Route, "landing"> }) {
   );
 }
 
+function shortenAddress(address: string) {
+  return address.length > 14 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address;
+}
+
 function WalletChip() {
+  const { connect, manageAccounts, isConnected, isConnecting, selectedAccount } = useWallet();
+  const { thru } = useThru();
+  const [balance, setBalance] = useState<string | null>(null);
+  const [walletError, setWalletError] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const address = selectedAccount?.address;
+    if (!address || !thru) {
+      setBalance(null);
+      return () => {
+        active = false;
+      };
+    }
+
+    setBalance(null);
+    thru.accounts.get(address, { view: AccountView.META_ONLY })
+      .then((account) => {
+        if (active) setBalance(account.meta?.balance.toString() ?? "0");
+      })
+      .catch(() => {
+        if (active) setBalance(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [selectedAccount?.address, thru]);
+
+  const handleWalletClick = async () => {
+    if (isConnecting) return;
+    setWalletError(false);
+    try {
+      if (isConnected) {
+        await manageAccounts();
+      } else {
+        await connect({ metadata: walletMetadata, passkeyName: "Cambrian" });
+      }
+    } catch {
+      setWalletError(true);
+    }
+  };
+
+  const label = isConnecting
+    ? "Opening wallet…"
+    : selectedAccount
+      ? shortenAddress(selectedAccount.address)
+      : "Connect wallet";
+  const detail = walletError
+    ? "Wallet request cancelled"
+    : selectedAccount
+      ? balance === null ? "Reading balance…" : `Balance ${balance} units`
+      : "Thru Betanet";
+
   return (
-    <div className="wallet-chip" aria-label="Connected wallet 0x7E1A...B42C with 12.40 THRU">
+    <button className="wallet-chip" type="button" onClick={handleWalletClick} aria-label={`${label}. ${detail}`}>
       <div>
-        <strong>0x7E1A...B42C</strong>
-        <span>12.40 THRU</span>
+        <strong>{label}</strong>
+        <span>{detail}</span>
       </div>
       <NetworkDot />
-    </div>
+    </button>
   );
 }
 
@@ -158,7 +219,7 @@ function DashboardFrame({ activeRoute, children, notice, onDismiss }: { activeRo
       </main>
       {notice && (
         <div className="notice" role="status">
-          <span>{notice === "birth" ? "Birth flow ready for wallet approval." : "Faucet flow ready for request."}</span>
+          <span>{notice === "birth" ? "Birth is waiting for a verified Cambrian Betanet deployment." : "Native faucet endpoint is waiting for Betanet verification."}</span>
           <button type="button" onClick={onDismiss} aria-label="Dismiss notification">&times;</button>
         </div>
       )}
