@@ -153,6 +153,7 @@ button { cursor: pointer; }
   font: 400 16px/24px "IBM Plex Sans", sans-serif;
 }
 .faucet-button:hover { background: var(--surface); }
+.faucet-button:disabled { cursor: wait; opacity: .62; }
 .wallet-chip {
   display: flex;
   width: 320px;
@@ -278,6 +279,7 @@ button { cursor: pointer; }
   font-size: 14px;
   box-shadow: 0 12px 30px rgba(23, 33, 28, .18);
 }
+.notice span { max-width: min(520px, 68vw); }
 .notice button { border: 0; background: transparent; color: var(--on-stage); font-size: 20px; line-height: 1; }
 
 .inner-page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 32px; margin-bottom: 42px; }

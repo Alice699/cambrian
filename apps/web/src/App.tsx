@@ -10,6 +10,7 @@ import {
   type BirthTransactionStage,
 } from "@cambrian/sdk";
 import { walletMetadata } from "@cambrian/wallet-core";
+import { claimFaucet, FaucetApiError } from "./faucet";
 import markAsset from "./assets/cambrian-mark.svg";
 import networkDotAsset from "./assets/hero-organism.svg";
 import heroOrganismAsset from "./assets/organisms-thumbnail.svg";
@@ -17,7 +18,7 @@ import organismsThumbnailAsset from "./assets/network-dot.svg";
 import birthDotAsset from "./assets/activity-birth-dot.svg";
 import { appConfig } from "./config";
 
-type Notice = "faucet" | "birth" | "birth-submitted" | "birth-success" | "birth-error" | null;
+type Notice = "faucet" | "faucet-submitted" | "faucet-success" | "faucet-error" | "birth" | "birth-submitted" | "birth-success" | "birth-error" | null;
 type Route = "landing" | "dashboard" | "organisms" | "activity" | "learn";
 
 function routeFromLocation(): Route {
@@ -84,7 +85,7 @@ function shortenAddress(address: string) {
   return address.length > 14 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address;
 }
 
-function WalletChip() {
+function WalletChip({ refreshKey = 0 }: { refreshKey?: number }) {
   const { connect, manageAccounts, isConnected, isConnecting, selectedAccount } = useWallet();
   const { thru, error: sdkError } = useThru();
   const [balance, setBalance] = useState<string | null>(null);
@@ -117,7 +118,7 @@ function WalletChip() {
     return () => {
       active = false;
     };
-  }, [selectedAccount?.address, thru]);
+  }, [selectedAccount?.address, thru, refreshKey]);
 
   const handleWalletClick = async () => {
     if (actionPending) return;
@@ -418,7 +419,10 @@ function DashboardFooter() {
   );
 }
 
-function noticeCopy(notice: Notice) {
+function noticeCopy(notice: Notice, detail?: string | null) {
+  if (notice === "faucet-submitted") return detail ?? "Faucet request submitted. Waiting for the Betanet balance to update.";
+  if (notice === "faucet-success") return detail ?? "Faucet funds confirmed by the Betanet provider.";
+  if (notice === "faucet-error") return detail ?? "Faucet request could not be completed.";
   if (notice === "birth") return "Birth is waiting for a verified Cambrian Betanet deployment.";
   if (notice === "birth-submitted") return "Birth was submitted. Waiting for the Betanet execution result.";
   if (notice === "birth-success") return "Birth transaction confirmed by the Betanet RPC.";
@@ -426,7 +430,7 @@ function noticeCopy(notice: Notice) {
   return "Native faucet endpoint is waiting for Betanet verification.";
 }
 
-function DashboardFrame({ activeRoute, children, notice, onDismiss }: { activeRoute: Exclude<Route, "landing">; children: ReactNode; notice?: Notice; onDismiss?: () => void }) {
+function DashboardFrame({ activeRoute, children, notice, noticeDetail, onDismiss }: { activeRoute: Exclude<Route, "landing">; children: ReactNode; notice?: Notice; noticeDetail?: string | null; onDismiss?: () => void }) {
   return (
     <div className="dashboard-shell">
       <Sidebar activeRoute={activeRoute} />
@@ -436,7 +440,7 @@ function DashboardFrame({ activeRoute, children, notice, onDismiss }: { activeRo
       </main>
       {notice && (
         <div className="notice" role="status">
-          <span>{noticeCopy(notice)}</span>
+          <span>{noticeCopy(notice, noticeDetail)}</span>
           <button type="button" onClick={onDismiss} aria-label="Dismiss notification">&times;</button>
         </div>
       )}
@@ -446,7 +450,10 @@ function DashboardFrame({ activeRoute, children, notice, onDismiss }: { activeRo
 
 function DashboardPage() {
   const [notice, setNotice] = useState<Notice>(null);
+  const [noticeDetail, setNoticeDetail] = useState<string | null>(null);
   const [birthStage, setBirthStage] = useState<BirthTransactionStage | null>(null);
+  const [faucetStage, setFaucetStage] = useState<"idle" | "requesting">("idle");
+  const [balanceRefreshKey, setBalanceRefreshKey] = useState(0);
   const { thru } = useThru();
   const { wallet, selectedAccount, isConnected } = useWallet();
   const organismRead = useOrganismCollection();
@@ -458,15 +465,18 @@ function DashboardPage() {
 
     if (!appConfig.programId || !appConfig.abiId) {
       setNotice("birth");
+      setNoticeDetail(null);
       return;
     }
 
     if (!thru || !wallet || !selectedAccount || !isConnected) {
       setNotice("birth-error");
+      setNoticeDetail("Connect a wallet before approving a birth transaction.");
       return;
     }
 
     setNotice(null);
+    setNoticeDetail(null);
     try {
       const result = await executeBirthTransaction(thru, appConfig, wallet, {
         walletAddress: selectedAccount.address,
@@ -477,21 +487,63 @@ function DashboardPage() {
     } catch (error) {
       console.error("[Cambrian] birth transaction failed", error);
       setNotice("birth-error");
+      setNoticeDetail(error instanceof Error ? error.message : null);
     } finally {
       setBirthStage(null);
     }
   };
 
+  const handleFaucet = async () => {
+    if (faucetStage === "requesting") return;
+    if (!selectedAccount || !isConnected) {
+      setNotice("faucet-error");
+      setNoticeDetail("Connect a wallet before requesting native Betanet funds.");
+      return;
+    }
+
+    setFaucetStage("requesting");
+    setNotice(null);
+    setNoticeDetail(null);
+    try {
+      const receipt = await claimFaucet(selectedAccount.address);
+      setBalanceRefreshKey((current) => current + 1);
+      if (receipt.status === "confirmed") {
+        setNotice("faucet-success");
+        setNoticeDetail("Faucet confirmed " + receipt.amount + " native units.");
+      } else {
+        setNotice("faucet-submitted");
+        setNoticeDetail("Faucet accepted the request. Balance will update after Betanet settlement.");
+      }
+    } catch (error) {
+      const detail = error instanceof FaucetApiError
+        ? error.message
+        : error instanceof Error
+          ? error.message
+          : "Faucet request failed.";
+      setNotice("faucet-error");
+      setNoticeDetail(detail);
+    } finally {
+      setFaucetStage("idle");
+    }
+  };
+
+  const dismissNotice = () => {
+    setNotice(null);
+    setNoticeDetail(null);
+  };
+
   return (
-    <DashboardFrame activeRoute="dashboard" notice={notice} onDismiss={() => setNotice(null)}>
+    <DashboardFrame activeRoute="dashboard" notice={notice} noticeDetail={noticeDetail} onDismiss={dismissNotice}>
       <header className="dashboard-header" id="overview">
         <div>
           <p className="page-label">OVERVIEW&nbsp; / &nbsp;CAMBRIAN LIFEFORM</p>
           <h1>Your ecosystem</h1>
         </div>
         <div className="header-actions">
-          <button className="faucet-button" type="button" onClick={() => setNotice("faucet")}>Get faucet</button>
-          <WalletChip />
+          <button className="faucet-button" type="button" onClick={handleFaucet} disabled={faucetStage === "requesting"} aria-busy={faucetStage === "requesting"}>
+            {faucetStage === "requesting" ? "Requesting..." : "Get faucet"}
+          </button>
+          <WalletChip refreshKey={balanceRefreshKey} />
         </div>
       </header>
 

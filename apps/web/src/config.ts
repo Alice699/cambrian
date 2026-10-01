@@ -2,6 +2,8 @@ import { createCambrianConfig } from "@cambrian/config";
 
 const env = import.meta.env;
 
+export const apiBaseUrl = env.VITE_API_URL || (import.meta.env.DEV ? "http://127.0.0.1:8787" : "/api");
+
 export const appConfig = createCambrianConfig({
   ...(env.VITE_THRU_RPC_URL ? { rpcUrl: env.VITE_THRU_RPC_URL } : {}),
   ...(env.VITE_THRU_WALLET_IFRAME_URL ? { walletIframeUrl: env.VITE_THRU_WALLET_IFRAME_URL } : {}),
