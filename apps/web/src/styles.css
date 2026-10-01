@@ -219,6 +219,7 @@ button { cursor: pointer; }
   white-space: nowrap;
 }
 .birth-button:hover { background: #ad5945; }
+.birth-button:disabled { cursor: wait; opacity: .68; }
 
 .signal-section { margin-top: 42px; }
 .signal-section h2 {

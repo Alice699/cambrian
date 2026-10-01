@@ -7,7 +7,7 @@ import {
   type Thru,
 } from "@thru/sdk";
 import type { CambrianConfig } from "@cambrian/config";
-import { decodeCambrianOrganism, type CambrianOrganismState } from "./abi";
+import { decodeCambrianOrganism, type CambrianOrganismState } from "./abi.js";
 
 export interface CambrianAccountSnapshot {
   address: string;

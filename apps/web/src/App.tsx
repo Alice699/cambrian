@@ -4,8 +4,10 @@ import {
   listAccountTransactions,
   listCambrianOrganisms,
   readAccountSnapshot,
+  executeBirthTransaction,
   type CambrianOrganismRecord,
   type CambrianTransactionSummary,
+  type BirthTransactionStage,
 } from "@cambrian/sdk";
 import { walletMetadata } from "@cambrian/wallet-core";
 import markAsset from "./assets/cambrian-mark.svg";
@@ -15,7 +17,7 @@ import organismsThumbnailAsset from "./assets/network-dot.svg";
 import birthDotAsset from "./assets/activity-birth-dot.svg";
 import { appConfig } from "./config";
 
-type Notice = "faucet" | "birth" | null;
+type Notice = "faucet" | "birth" | "birth-submitted" | "birth-success" | "birth-error" | null;
 type Route = "landing" | "dashboard" | "organisms" | "activity" | "learn";
 
 function routeFromLocation(): Route {
@@ -310,7 +312,18 @@ function activityStatusCopy(status: ActivityReadStatus, error: string | null) {
   return ["No activity data", "Select a wallet account to read its transaction trail."] as const;
 }
 
-function EcosystemStage({ onBirth }: { onBirth: () => void }) {
+function birthStageLabel(stage: BirthTransactionStage | null | undefined) {
+  if (!stage) return "Birth new organism";
+  if (stage === "awaiting-approval") return "Approve in wallet";
+  if (stage === "preparing") return "Preparing birth";
+  if (stage === "signed") return "Wallet approved";
+  if (stage === "submitting") return "Submitting birth";
+  if (stage === "submitted") return "Birth submitted";
+  if (stage === "confirmed") return "Birth confirmed";
+  return "Birth failed";
+}
+
+function EcosystemStage({ onBirth, birthStage }: { onBirth: () => void; birthStage?: BirthTransactionStage | null }) {
   return (
     <section className="ecosystem-stage" aria-labelledby="ecosystem-title">
       <div className="stage-copy">
@@ -323,7 +336,9 @@ function EcosystemStage({ onBirth }: { onBirth: () => void }) {
         <img src={heroOrganismAsset} width="210" height="190" alt="Cambrian organism viewer" />
         <p>3D VIEWER&nbsp; / &nbsp;PHASE 1</p>
       </div>
-      <button className="birth-button" type="button" onClick={onBirth}>Birth new organism</button>
+      <button className="birth-button" type="button" onClick={onBirth} disabled={Boolean(birthStage)} aria-live="polite">
+        {birthStageLabel(birthStage)}
+      </button>
     </section>
   );
 }
@@ -403,6 +418,14 @@ function DashboardFooter() {
   );
 }
 
+function noticeCopy(notice: Notice) {
+  if (notice === "birth") return "Birth is waiting for a verified Cambrian Betanet deployment.";
+  if (notice === "birth-submitted") return "Birth was submitted. Waiting for the Betanet execution result.";
+  if (notice === "birth-success") return "Birth transaction confirmed by the Betanet RPC.";
+  if (notice === "birth-error") return "Birth could not be completed. Check the wallet approval and Betanet state.";
+  return "Native faucet endpoint is waiting for Betanet verification.";
+}
+
 function DashboardFrame({ activeRoute, children, notice, onDismiss }: { activeRoute: Exclude<Route, "landing">; children: ReactNode; notice?: Notice; onDismiss?: () => void }) {
   return (
     <div className="dashboard-shell">
@@ -413,7 +436,7 @@ function DashboardFrame({ activeRoute, children, notice, onDismiss }: { activeRo
       </main>
       {notice && (
         <div className="notice" role="status">
-          <span>{notice === "birth" ? "Birth is waiting for a verified Cambrian Betanet deployment." : "Native faucet endpoint is waiting for Betanet verification."}</span>
+          <span>{noticeCopy(notice)}</span>
           <button type="button" onClick={onDismiss} aria-label="Dismiss notification">&times;</button>
         </div>
       )}
@@ -423,9 +446,41 @@ function DashboardFrame({ activeRoute, children, notice, onDismiss }: { activeRo
 
 function DashboardPage() {
   const [notice, setNotice] = useState<Notice>(null);
+  const [birthStage, setBirthStage] = useState<BirthTransactionStage | null>(null);
+  const { thru } = useThru();
+  const { wallet, selectedAccount, isConnected } = useWallet();
   const organismRead = useOrganismCollection();
   const activityRead = useAccountTransactions();
   const organism = organismRead.organisms[0];
+
+  const handleBirth = async () => {
+    if (birthStage) return;
+
+    if (!appConfig.programId || !appConfig.abiId) {
+      setNotice("birth");
+      return;
+    }
+
+    if (!thru || !wallet || !selectedAccount || !isConnected) {
+      setNotice("birth-error");
+      return;
+    }
+
+    setNotice(null);
+    try {
+      const result = await executeBirthTransaction(thru, appConfig, wallet, {
+        walletAddress: selectedAccount.address,
+        seed: `birth-${Date.now()}`,
+        onUpdate: ({ stage }) => setBirthStage(stage),
+      });
+      setNotice(result.stage === "confirmed" ? "birth-success" : "birth-submitted");
+    } catch (error) {
+      console.error("[Cambrian] birth transaction failed", error);
+      setNotice("birth-error");
+    } finally {
+      setBirthStage(null);
+    }
+  };
 
   return (
     <DashboardFrame activeRoute="dashboard" notice={notice} onDismiss={() => setNotice(null)}>
@@ -440,7 +495,7 @@ function DashboardPage() {
         </div>
       </header>
 
-      <EcosystemStage onBirth={() => setNotice("birth")} />
+      <EcosystemStage onBirth={handleBirth} birthStage={birthStage} />
 
       <section className="signal-section" aria-labelledby="signal-title">
         <h2 id="signal-title">Signal</h2>

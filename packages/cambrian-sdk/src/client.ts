@@ -7,7 +7,7 @@ import {
   encodeBirthInstruction,
   randomBytes32,
   utf8ToBytes32,
-} from "./abi";
+} from "./abi.js";
 
 export interface BirthIntentOptions {
   walletAddress: string;

@@ -8,6 +8,7 @@ import {
   encodeBirthInstruction,
   utf8ToBytes32,
 } from "../packages/cambrian-sdk/src/abi.ts";
+import { assertBirthDeployment } from "../packages/cambrian-sdk/src/deployment.ts";
 
 test("encodes birth instruction with the documented little-endian layout", () => {
   const seed = new Uint8Array(32).fill(0x11);
@@ -83,5 +84,19 @@ test("rejects malformed organism account data", () => {
       proof: new Uint8Array(),
     }),
     /seed must be exactly 32 bytes/,
+  );
+});
+
+test("does not allow a birth transaction before deployment IDs are configured", () => {
+  assert.throws(
+    () => assertBirthDeployment({
+      network: "betanet",
+      rpcUrl: "https://rpc.betanet.thru.org",
+      walletIframeUrl: "https://app.tid.sh/embedded",
+      explorerUrl: "https://scan.thru.org",
+      programId: "",
+      abiId: "",
+    }),
+    /program ID is not configured yet/,
   );
 });
