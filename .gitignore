@@ -1,0 +1,9 @@
+# Local agent context - never commit these files.
+/memory.md
+/soul.md
+/tasks.md
+/\.figma-state.json
+
+# Installed dependencies.
+/node_modules/
+/apps/web/dist/
