@@ -77,9 +77,14 @@ function shortenAddress(address: string) {
 
 function WalletChip() {
   const { connect, manageAccounts, isConnected, isConnecting, selectedAccount } = useWallet();
-  const { thru } = useThru();
+  const { thru, error: sdkError } = useThru();
   const [balance, setBalance] = useState<string | null>(null);
-  const [walletError, setWalletError] = useState(false);
+  const [actionPending, setActionPending] = useState(false);
+  const [walletError, setWalletError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (sdkError) setWalletError(sdkError.message);
+  }, [sdkError]);
 
   useEffect(() => {
     let active = true;
@@ -106,29 +111,34 @@ function WalletChip() {
   }, [selectedAccount?.address, thru]);
 
   const handleWalletClick = async () => {
-    if (isConnecting) return;
-    setWalletError(false);
+    if (actionPending) return;
+    setActionPending(true);
+    setWalletError(null);
     try {
       if (isConnected) {
         await manageAccounts();
       } else {
         await connect({ metadata: walletMetadata, passkeyName: "Cambrian" });
       }
-    } catch {
-      setWalletError(true);
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : "Wallet request failed";
+      setWalletError(message);
+      console.error("[Cambrian] wallet connect failed", error);
+    } finally {
+      setActionPending(false);
     }
   };
 
-  const label = isConnecting
+  const label = actionPending
     ? "Opening wallet…"
     : selectedAccount
       ? shortenAddress(selectedAccount.address)
-      : "Connect wallet";
+      : "Create or connect wallet";
   const detail = walletError
-    ? "Wallet request cancelled"
+    ? walletError
     : selectedAccount
       ? balance === null ? "Reading balance…" : `Balance ${balance} units`
-      : "Thru Betanet";
+      : isConnecting ? "Preparing Thru Betanet…" : "Thru Betanet";
 
   return (
     <button className="wallet-chip" type="button" onClick={handleWalletClick} aria-label={`${label}. ${detail}`}>
