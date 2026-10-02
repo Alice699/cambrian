@@ -10,7 +10,7 @@ CLI.
 
 ## Features
 
-- Thru wallet and passkey connection
+- Encrypted browser-local self-custodial wallet with optional Thru Wallet fallback
 - Native account balance and transaction reads
 - Cambrian organism account discovery and decoding
 - Guarded Birth transaction lifecycle
@@ -21,7 +21,7 @@ CLI.
 ## Stack
 
 - React, TypeScript, and Vite
-- Thru SDK and hosted wallet
+- Thru SDK, local HD wallet primitives, and hosted wallet fallback
 - Three.js with React Three Fiber
 - Node.js API using the built-in HTTP server
 - npm workspaces
@@ -97,16 +97,33 @@ variables.
     packages/
       cambrian-sdk/        Instruction builders, decoders, and chain services
       config/              Shared Betanet configuration
-      wallet-core/         Thru wallet integration
+      wallet-core/         Local vault, Thru signer, and hosted wallet integration
     tests/                 SDK and faucet tests
 
 ## Current status
 
-The interface, wallet integration, read services, guarded Birth flow, and
-faucet boundary are implemented. The fresh program and ABI are live on Betanet,
-and the published ABI was read back and matched locally. Live Birth still needs
-wallet/passkey end-to-end verification, while faucet payouts still need an
-approved native-faucet provider.
+The interface, wallet integration, encrypted local-wallet foundation, read
+services, guarded Birth flow, and faucet boundary are implemented. The fresh
+program and ABI are live on Betanet, and the published ABI was read back and
+matched locally. Live Birth still needs wallet end-to-end verification, while
+faucet payouts still need an approved native-faucet provider.
+
+### Wallet custody modes
+
+Cambrian currently exposes two signing paths:
+
+- **Local self-custody:** a Thru BIP39/HD account is created or restored in the
+  browser. The encrypted vault is stored in IndexedDB using PBKDF2 + AES-GCM;
+  the private key is held in memory only while the wallet is unlocked. The
+  recovery phrase is shown once and is never sent to Cambrian's API.
+- **Hosted Thru Wallet:** the existing embedded Thru Wallet flow remains
+  available as a fallback for users who prefer managed wallet/passkey UX.
+
+The local wallet uses Thru's official key derivation, Ed25519 signing, and
+transaction builder primitives. Cambrian does not implement its own key
+algorithm or transaction wire format. This is an early self-custody slice and
+still needs browser QA, account funding, and a live Betanet Birth smoke test
+before it should be treated as production-ready.
 
 ### Verified Betanet deployment
 
@@ -123,8 +140,11 @@ Explorer links:
 
 ## Security
 
-- Private keys are never stored by the frontend.
-- Wallet approval remains the signing boundary for user transactions.
+- Local wallet secrets are encrypted at rest in IndexedDB; plaintext private
+  keys are held only in memory while the wallet is unlocked and cleared on lock.
+- Recovery phrases are never sent to the Cambrian API and are not included in
+  the public wallet snapshot.
+- Hosted-wallet approval remains an optional signing boundary for that mode.
 - Faucet provider credentials stay on the API server.
 - Missing deployment or faucet configuration fails closed.
 

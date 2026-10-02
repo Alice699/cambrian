@@ -1,5 +1,5 @@
 import type { Thru } from "@thru/sdk/client";
-import type { IThruChain, ThruTransactionIntent } from "@thru/wallet";
+import type { ThruTransactionIntent } from "@thru/wallet";
 import type { CambrianConfig } from "@cambrian/config";
 import { base64ToBytes } from "./abi.js";
 import { prepareBirthIntent, type BirthIntentOptions, type PreparedBirthIntent } from "./client.js";
@@ -39,10 +39,15 @@ export interface BirthTransactionResult {
   vmError?: number;
 }
 
+export type CambrianTransactionSigner = {
+  readonly connected: boolean;
+  signTransaction(transaction: ThruTransactionIntent): Promise<string>;
+};
+
 export async function executeBirthTransaction(
   client: Thru,
   config: CambrianConfig,
-  wallet: IThruChain,
+  wallet: CambrianTransactionSigner,
   options: ExecuteBirthTransactionOptions,
 ): Promise<BirthTransactionResult> {
   assertBirthDeployment(config);

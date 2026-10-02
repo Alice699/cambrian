@@ -28,3 +28,5 @@ export function createWalletConfig(config: CambrianConfig = defaultCambrianConfi
 }
 
 export const walletConfig = createWalletConfig();
+
+export * from "./local-wallet.js";

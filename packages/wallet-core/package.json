@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@cambrian/config": "0.0.0",
+    "@thru/sdk": "^0.4.0",
     "@thru/wallet": "^0.4.0"
   }
 }

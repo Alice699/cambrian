@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import { useThru, useWallet } from "@thru/wallet/react";
 import {
   listAccountTransactions,
@@ -9,7 +9,7 @@ import {
   type CambrianTransactionSummary,
   type BirthTransactionStage,
 } from "@cambrian/sdk";
-import { walletMetadata } from "@cambrian/wallet-core";
+import { LocalWalletController, walletMetadata } from "@cambrian/wallet-core";
 import { claimFaucet, FaucetApiError } from "./faucet";
 import markAsset from "./assets/cambrian-mark.svg";
 import footerMarkAsset from "./assets/cambrian-mark-light.svg";
@@ -20,11 +20,22 @@ import organismsThumbnailAsset from "./assets/network-dot.svg";
 import birthDotAsset from "./assets/activity-birth-dot.svg";
 import { appConfig } from "./config";
 
+const localWalletController = new LocalWalletController({ rpcUrl: appConfig.rpcUrl });
+
+function useLocalWallet() {
+  return useSyncExternalStore(
+    localWalletController.subscribe,
+    localWalletController.getSnapshot,
+    localWalletController.getServerSnapshot,
+  );
+}
+
 type Notice = "faucet" | "faucet-submitted" | "faucet-success" | "faucet-error" | "birth" | "birth-submitted" | "birth-success" | "birth-error" | null;
-type Route = "landing" | "dashboard" | "organisms" | "activity" | "learn";
+type Route = "landing" | "dashboard" | "wallet" | "organisms" | "activity" | "learn";
 
 function routeFromLocation(): Route {
   const path = window.location.pathname;
+  if (path === "/app/wallet") return "wallet";
   if (path === "/app/organisms") return "organisms";
   if (path === "/app/activity") return "activity";
   if (path === "/app/learn") return "learn";
@@ -70,6 +81,7 @@ function Sidebar({ activeRoute }: { activeRoute: Exclude<Route, "landing"> }) {
       <p className="sidebar-label">THRU BETANET</p>
       <nav className="sidebar-nav" aria-label="Dashboard">
         <a className={`sidebar-nav-item ${activeRoute === "dashboard" ? "active" : ""}`} href="/app" onClick={(event) => navigateInternal("/app", event)} aria-current={activeRoute === "dashboard" ? "page" : undefined}>Overview</a>
+        <a className={`sidebar-nav-item ${activeRoute === "wallet" ? "active" : ""}`} href="/app/wallet" onClick={(event) => navigateInternal("/app/wallet", event)} aria-current={activeRoute === "wallet" ? "page" : undefined}>Wallet</a>
         <a className={`sidebar-nav-item ${activeRoute === "organisms" ? "active" : ""}`} href="/app/organisms" onClick={(event) => navigateInternal("/app/organisms", event)} aria-current={activeRoute === "organisms" ? "page" : undefined}>Organisms</a>
         <a className={`sidebar-nav-item ${activeRoute === "activity" ? "active" : ""}`} href="/app/activity" onClick={(event) => navigateInternal("/app/activity", event)} aria-current={activeRoute === "activity" ? "page" : undefined}>Activity</a>
         <a className={`sidebar-nav-item ${activeRoute === "learn" ? "active" : ""}`} href="/app/learn" onClick={(event) => navigateInternal("/app/learn", event)} aria-current={activeRoute === "learn" ? "page" : undefined}>Learn</a>
@@ -88,10 +100,10 @@ function shortenAddress(address: string) {
 }
 
 function WalletChip({ refreshKey = 0 }: { refreshKey?: number }) {
-  const { connect, manageAccounts, isConnected, isConnecting, selectedAccount } = useWallet();
+  const { isConnected, selectedAccount } = useWallet();
   const { thru, error: sdkError } = useThru();
+  const localWallet = useLocalWallet();
   const [balance, setBalance] = useState<string | null>(null);
-  const [actionPending, setActionPending] = useState(false);
   const [walletError, setWalletError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -100,7 +112,7 @@ function WalletChip({ refreshKey = 0 }: { refreshKey?: number }) {
 
   useEffect(() => {
     let active = true;
-    const address = selectedAccount?.address;
+    const address = localWallet.status === "unlocked" ? localWallet.account?.address : selectedAccount?.address;
     if (!address || !thru) {
       setBalance(null);
       return () => {
@@ -120,46 +132,30 @@ function WalletChip({ refreshKey = 0 }: { refreshKey?: number }) {
     return () => {
       active = false;
     };
-  }, [selectedAccount?.address, thru, refreshKey]);
+  }, [localWallet.account?.address, localWallet.status, selectedAccount?.address, thru, refreshKey]);
 
-  const handleWalletClick = async () => {
-    if (actionPending) return;
-    setActionPending(true);
-    setWalletError(null);
-    try {
-      if (isConnected) {
-        await manageAccounts();
-      } else {
-        await connect({ metadata: walletMetadata, passkeyName: "Cambrian" });
-      }
-    } catch (error) {
-      const message = error instanceof Error && error.message ? error.message : "Wallet request failed";
-      setWalletError(message);
-      console.error("[Cambrian] wallet connect failed", error);
-    } finally {
-      setActionPending(false);
-    }
-  };
-
-  const label = actionPending
-    ? "Opening wallet…"
-    : selectedAccount
+  const localAddress = localWallet.status === "unlocked" ? localWallet.account?.address : undefined;
+  const label = localAddress
+    ? shortenAddress(localAddress)
+    : selectedAccount && isConnected
       ? shortenAddress(selectedAccount.address)
-      : "Create or connect wallet";
+      : "Open wallet";
   const detail = walletError
     ? walletError
-    : selectedAccount
+    : localAddress
+      ? balance === null ? "Reading local balance..." : `Self-custody / ${balance} units`
+      : selectedAccount
       ? balance === null ? "Reading balance…" : `Balance ${balance} units`
-      : isConnecting ? "Preparing Thru Betanet…" : "Thru Betanet";
+      : "Create or connect account";
 
   return (
-    <button className="wallet-chip" type="button" onClick={handleWalletClick} aria-label={`${label}. ${detail}`}>
+    <a className="wallet-chip" href="/app/wallet" onClick={(event) => navigateInternal("/app/wallet", event)} aria-label={`${label}. ${detail}`}>
       <div>
         <strong>{label}</strong>
         <span>{detail}</span>
       </div>
       <NetworkDot />
-    </button>
+    </a>
   );
 }
 
@@ -238,7 +234,8 @@ interface ActivityReadState {
 function useAccountTransactions(): ActivityReadState {
   const { thru } = useThru();
   const { selectedAccount } = useWallet();
-  const address = selectedAccount?.address;
+  const localWallet = useLocalWallet();
+  const address = localWallet.status === "unlocked" ? localWallet.account?.address : selectedAccount?.address;
   const [state, setState] = useState<ActivityReadState>({
     status: address ? "idle" : "needs-wallet",
     transactions: [],
@@ -284,7 +281,7 @@ function useAccountTransactions(): ActivityReadState {
     return () => {
       active = false;
     };
-  }, [address, thru]);
+  }, [address, localWallet.status, thru]);
 
   return state;
 }
@@ -304,7 +301,7 @@ function organismStatusCopy(status: OrganismReadStatus, error: string | null) {
   if (status === "loading") return ["Reading Betanet", "Looking for accounts owned by the configured Cambrian program."] as const;
   if (status === "empty") return ["No organisms found", "The Betanet query returned no Cambrian organism accounts yet."] as const;
   if (status === "error") return ["Read failed", error ?? "The Betanet read request could not be completed."] as const;
-  return ["No organism data", "Connect the fresh program deployment to make organism state available here."] as const;
+  return ["No organism data", "Create an organism through the wallet to make state available here."] as const;
 }
 
 function activityStatusCopy(status: ActivityReadStatus, error: string | null) {
@@ -425,11 +422,11 @@ function noticeCopy(notice: Notice, detail?: string | null) {
   if (notice === "faucet-submitted") return detail ?? "Faucet request submitted. Waiting for the Betanet balance to update.";
   if (notice === "faucet-success") return detail ?? "Faucet funds confirmed by the Betanet provider.";
   if (notice === "faucet-error") return detail ?? "Faucet request could not be completed.";
-  if (notice === "birth") return "Birth is waiting for a verified Cambrian Betanet deployment.";
+  if (notice === "birth") return "Birth requires a configured Cambrian Betanet deployment.";
   if (notice === "birth-submitted") return "Birth was submitted. Waiting for the Betanet execution result.";
   if (notice === "birth-success") return "Birth transaction confirmed by the Betanet RPC.";
   if (notice === "birth-error") return "Birth could not be completed. Check the wallet approval and Betanet state.";
-  return "Native faucet endpoint is waiting for Betanet verification.";
+  return "Native faucet endpoint is not configured yet.";
 }
 
 function DashboardFrame({ activeRoute, children, notice, noticeDetail, onDismiss }: { activeRoute: Exclude<Route, "landing">; children: ReactNode; notice?: Notice; noticeDetail?: string | null; onDismiss?: () => void }) {
@@ -458,6 +455,10 @@ function DashboardPage() {
   const [balanceRefreshKey, setBalanceRefreshKey] = useState(0);
   const { thru } = useThru();
   const { wallet, selectedAccount, isConnected } = useWallet();
+  const localWallet = useLocalWallet();
+  const localSigner = localWallet.status === "unlocked" ? localWalletController.getSigner() : null;
+  const activeSigner = localSigner ?? (wallet && isConnected ? wallet : null);
+  const activeAddress = localSigner?.account.address ?? (selectedAccount && isConnected ? selectedAccount.address : null);
   const organismRead = useOrganismCollection();
   const activityRead = useAccountTransactions();
   const organism = organismRead.organisms[0];
@@ -471,17 +472,17 @@ function DashboardPage() {
       return;
     }
 
-    if (!thru || !wallet || !selectedAccount || !isConnected) {
+    if (!thru || !activeSigner || !activeAddress) {
       setNotice("birth-error");
-      setNoticeDetail("Connect a wallet before approving a birth transaction.");
+      setNoticeDetail("Create or unlock a wallet before approving a birth transaction.");
       return;
     }
 
     setNotice(null);
     setNoticeDetail(null);
     try {
-      const result = await executeBirthTransaction(thru, appConfig, wallet, {
-        walletAddress: selectedAccount.address,
+      const result = await executeBirthTransaction(thru, appConfig, activeSigner, {
+        walletAddress: activeAddress,
         seed: `birth-${Date.now()}`,
         onUpdate: ({ stage }) => setBirthStage(stage),
       });
@@ -497,9 +498,9 @@ function DashboardPage() {
 
   const handleFaucet = async () => {
     if (faucetStage === "requesting") return;
-    if (!selectedAccount || !isConnected) {
+    if (!activeAddress) {
       setNotice("faucet-error");
-      setNoticeDetail("Connect a wallet before requesting native Betanet funds.");
+      setNoticeDetail("Create or unlock a wallet before requesting native Betanet funds.");
       return;
     }
 
@@ -507,7 +508,7 @@ function DashboardPage() {
     setNotice(null);
     setNoticeDetail(null);
     try {
-      const receipt = await claimFaucet(selectedAccount.address);
+      const receipt = await claimFaucet(activeAddress);
       setBalanceRefreshKey((current) => current + 1);
       if (receipt.status === "confirmed") {
         setNotice("faucet-success");
@@ -568,6 +569,321 @@ function DashboardPage() {
   );
 }
 
+type LocalWalletAction = "create" | "restore" | "unlock" | null;
+
+function LocalWalletCard() {
+  const localWallet = useLocalWallet();
+  const { thru } = useThru();
+  const [mode, setMode] = useState<"create" | "restore">("create");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [phrase, setPhrase] = useState("");
+  const [recoveryPhrase, setRecoveryPhrase] = useState<string | null>(null);
+  const [action, setAction] = useState<LocalWalletAction>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [balance, setBalance] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const address = localWallet.account?.address ?? null;
+
+  useEffect(() => {
+    let active = true;
+    if (localWallet.status !== "unlocked" || !address || !thru) {
+      setBalance(null);
+      return () => {
+        active = false;
+      };
+    }
+    readAccountSnapshot(thru, address)
+      .then((account) => {
+        if (active) setBalance(account.balance?.toString() ?? "0");
+      })
+      .catch(() => {
+        if (active) setBalance(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [address, localWallet.status, thru]);
+
+  const runLocalAction = async (nextAction: Exclude<LocalWalletAction, null>) => {
+    if (action) return;
+    setAction(nextAction);
+    setError(null);
+    try {
+      if (nextAction === "create") {
+        if (password !== confirmPassword) throw new Error("Wallet passwords do not match");
+        const result = await localWalletController.create(password);
+        setRecoveryPhrase(result.recoveryPhrase);
+        setPassword("");
+        setConfirmPassword("");
+      } else if (nextAction === "restore") {
+        const restored = await localWalletController.restore(phrase, password);
+        setPhrase("");
+        setPassword("");
+        setRecoveryPhrase(null);
+        setError(`Restored ${shortenAddress(restored.address)}. Keep your recovery phrase safe.`);
+      } else {
+        await localWalletController.unlock(password);
+        setPassword("");
+      }
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Local wallet action failed");
+    } finally {
+      setAction(null);
+    }
+  };
+
+  const copy = async (value: string, successMessage: string) => {
+    if (!navigator.clipboard) {
+      setError("Clipboard is unavailable in this browser");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setError(successMessage);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setError("Could not copy to clipboard");
+    }
+  };
+
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    void runLocalAction(localWallet.status === "locked" ? "unlock" : mode);
+  };
+
+  const stateLabel = localWallet.status === "loading"
+    ? "Checking device"
+    : localWallet.status === "unlocked"
+      ? "Unlocked"
+      : localWallet.status === "locked"
+        ? "Locked"
+        : "Not created";
+
+  return (
+    <section className="local-wallet-card" aria-labelledby="local-wallet-title">
+      <div className="local-wallet-heading">
+        <div>
+          <p className="panel-label">CAMBRIAN LOCAL WALLET</p>
+          <h2 id="local-wallet-title">Your keys stay with you.</h2>
+          <p>Self-custody without an extension. The encrypted vault stays in this browser and Cambrian never receives the recovery phrase.</p>
+        </div>
+        <span className={`wallet-state ${localWallet.status === "unlocked" ? "is-connected" : ""}`}><i /> {stateLabel}</span>
+      </div>
+
+      {localWallet.status === "unlocked" && address ? (
+        <div className="local-wallet-unlocked">
+          <div className="local-wallet-identity">
+            <span>LOCAL ACCOUNT</span>
+            <strong>{shortenAddress(address)}</strong>
+            <small>{address}</small>
+          </div>
+          <div className="local-wallet-balance">
+            <span>AVAILABLE BALANCE</span>
+            <strong>{balance === null ? "Reading..." : balance}</strong>
+            <small>native Betanet units</small>
+          </div>
+          <div className="wallet-actions">
+            <button className="wallet-secondary-button" type="button" onClick={() => void copy(address, "Address copied")} disabled={Boolean(action)}>{copied ? "Address copied" : "Copy address"}</button>
+            <button className="wallet-text-button" type="button" onClick={() => { localWalletController.lock(); setRecoveryPhrase(null); setError(null); }} disabled={Boolean(action)}>Lock wallet</button>
+          </div>
+        </div>
+      ) : localWallet.status === "loading" ? (
+        <div className="local-wallet-empty"><strong>Checking this device...</strong><span>Looking for an encrypted Cambrian vault.</span></div>
+      ) : (
+        <form className="local-wallet-form" onSubmit={submit}>
+          {localWallet.status === "locked" ? (
+            <>
+              <label>Vault password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" minLength={8} required /></label>
+              <button className="wallet-primary-button" type="submit" disabled={action === "unlock"}>{action === "unlock" ? "Unlocking..." : "Unlock local wallet"}</button>
+              <small className="local-wallet-hint">The private key is decrypted only in memory while the wallet is unlocked.</small>
+            </>
+          ) : (
+            <>
+              <div className="local-wallet-tabs" role="tablist" aria-label="Local wallet setup">
+                <button type="button" className={mode === "create" ? "is-active" : ""} onClick={() => { setMode("create"); setError(null); }}>Create new</button>
+                <button type="button" className={mode === "restore" ? "is-active" : ""} onClick={() => { setMode("restore"); setError(null); }}>Restore phrase</button>
+              </div>
+              {mode === "restore" && <label>Recovery phrase<textarea value={phrase} onChange={(event) => setPhrase(event.target.value)} placeholder="Enter your 12-word phrase" autoComplete="off" required /></label>}
+              <div className="local-wallet-password-grid">
+                <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" minLength={8} required /></label>
+                {mode === "create" && <label>Confirm password<input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={8} required /></label>}
+              </div>
+              <button className="wallet-primary-button" type="submit" disabled={action === mode}>{action === mode ? mode === "create" ? "Creating..." : "Restoring..." : mode === "create" ? "Create local wallet" : "Restore local wallet"}</button>
+              <small className="local-wallet-hint">Use at least 8 characters. Your recovery phrase is the only way to recover this account on another device.</small>
+            </>
+          )}
+        </form>
+      )}
+
+      {recoveryPhrase && (
+        <div className="local-wallet-recovery" role="status">
+          <div><span>BACK UP BEFORE CONTINUING</span><strong>Your recovery phrase</strong></div>
+          <code>{recoveryPhrase}</code>
+          <p>Write these words down offline. Cambrian cannot reset this wallet if you lose them.</p>
+          <button className="wallet-secondary-button" type="button" onClick={() => void copy(recoveryPhrase, "Recovery phrase copied. Store it offline.")}>{copied ? "Copied" : "Copy phrase"}</button>
+        </div>
+      )}
+      {(error || localWallet.error) && <p className="wallet-error" role="alert">{error ?? localWallet.error}</p>}
+    </section>
+  );
+}
+
+type WalletAction = "connect" | "manage" | "disconnect" | null;
+
+function WalletPage() {
+  const { connect, manageAccounts, disconnect, isConnected, isConnecting, selectedAccount, accounts } = useWallet();
+  const { thru, error: sdkError } = useThru();
+  const [balance, setBalance] = useState<string | null>(null);
+  const [action, setAction] = useState<WalletAction>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const address = selectedAccount?.address ?? null;
+
+  useEffect(() => {
+    if (sdkError) setError(sdkError.message);
+  }, [sdkError]);
+
+  useEffect(() => {
+    let active = true;
+    if (!address || !thru) {
+      setBalance(null);
+      return () => {
+        active = false;
+      };
+    }
+
+    setBalance(null);
+    readAccountSnapshot(thru, address)
+      .then((account) => {
+        if (active) setBalance(account.balance?.toString() ?? "0");
+      })
+      .catch(() => {
+        if (active) setBalance(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [address, thru]);
+
+  const runWalletAction = async (nextAction: Exclude<WalletAction, null>) => {
+    if (action) return;
+    setAction(nextAction);
+    setError(null);
+    try {
+      if (nextAction === "connect") {
+        await connect({ metadata: walletMetadata, passkeyName: "Cambrian" });
+      } else if (nextAction === "manage") {
+        await manageAccounts();
+      } else {
+        await disconnect();
+      }
+    } catch (nextError) {
+      const message = nextError instanceof Error && nextError.message ? nextError.message : "Wallet request failed";
+      setError(message);
+      console.error("[Cambrian] wallet action failed", nextError);
+    } finally {
+      setAction(null);
+    }
+  };
+
+  const copyAddress = async () => {
+    if (!address || !navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(address);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setError("Address could not be copied on this browser.");
+    }
+  };
+
+  const connected = Boolean(isConnected && selectedAccount);
+  const stateLabel = action === "connect"
+    ? "Opening wallet"
+    : action === "manage"
+      ? "Loading accounts"
+      : action === "disconnect"
+        ? "Disconnecting"
+        : connected
+          ? "Connected"
+          : isConnecting
+            ? "Connecting"
+            : "Not connected";
+
+  return (
+    <DashboardFrame activeRoute="wallet">
+      <InnerPageHeader
+        label="WALLET / SIGNING BOUNDARY"
+        title="Your wallet, in Cambrian."
+        description="Create or connect an account through Thru Wallet, then review every Cambrian action before it is signed."
+        action={<span className="connected-badge"><i /> BETANET</span>}
+      />
+      <LocalWalletCard />
+      <section className="wallet-page-grid">
+        <article className="wallet-account-card">
+          <div className="wallet-card-heading">
+            <div>
+              <p className="panel-label">CAMBRIAN WALLET</p>
+              <h2>{connected ? "Account ready." : "Start with an account."}</h2>
+            </div>
+            <span className={`wallet-state ${connected ? "is-connected" : ""}`}><i /> {stateLabel}</span>
+          </div>
+
+          {connected && address ? (
+            <div className="wallet-account-detail">
+              <div className="wallet-address-block">
+                <span>SELECTED ACCOUNT</span>
+                <strong>{shortenAddress(address)}</strong>
+                <small>{address}</small>
+              </div>
+              <div className="wallet-balance-block">
+                <span>AVAILABLE BALANCE</span>
+                <strong>{balance === null ? "Reading…" : balance}</strong>
+                <small>native Betanet units</small>
+              </div>
+            </div>
+          ) : (
+            <div className="wallet-empty-state">
+              <span>LOCAL SIGNING BOUNDARY</span>
+              <p>Your address and signing approval stay inside the Thru Wallet flow. Cambrian only receives the account state it needs to build a transaction.</p>
+            </div>
+          )}
+
+          <div className="wallet-actions">
+            <button className="wallet-primary-button" type="button" onClick={() => runWalletAction(connected ? "manage" : "connect")} disabled={Boolean(action)} aria-busy={Boolean(action)}>
+              {action === "connect" ? "Opening wallet..." : connected ? "Manage account" : "Create or connect account"}
+            </button>
+            {connected && (
+              <>
+                <button className="wallet-secondary-button" type="button" onClick={copyAddress} disabled={Boolean(action)}>{copied ? "Address copied" : "Copy address"}</button>
+                <button className="wallet-text-button" type="button" onClick={() => runWalletAction("disconnect")} disabled={Boolean(action)}>Disconnect</button>
+              </>
+            )}
+          </div>
+          {error && <p className="wallet-error" role="alert">{error}</p>}
+        </article>
+
+        <aside className="wallet-side-notes" aria-label="Wallet notes">
+          <section className="wallet-note-card">
+            <span>01 / CUSTODY</span>
+            <h3>Keys stay with Thru Wallet.</h3>
+            <p>Cambrian owns the interface and transaction intent. Thru Wallet owns passkey unlock, account selection, and final signing.</p>
+          </section>
+          <section className="wallet-note-card">
+            <span>02 / NETWORK</span>
+            <h3>Thru Betanet.</h3>
+            <p>{accounts.length > 0 ? `${accounts.length} account${accounts.length === 1 ? "" : "s"} available in this wallet session.` : "Connect a wallet to see available accounts."}</p>
+          </section>
+        </aside>
+      </section>
+    </DashboardFrame>
+  );
+}
+
 function InnerPageHeader({ label, title, description, action }: { label: string; title: string; description: string; action?: ReactNode }) {
   return (
     <header className="inner-page-header">
@@ -610,7 +926,7 @@ function OrganismsPage() {
             <article><span>VITALITY</span><strong>{organism.state.vitality.toString()}</strong><p>Value read from the current account state.</p></article>
             <article><span>PULSE COUNT</span><strong>{organism.state.pulseCount.toString()}</strong><p>Actions recorded by the organism.</p></article>
           </section>
-          <section className="collection-note"><p className="panel-label">NEXT TRACE</p><h2>Every pulse leaves a readable mark.</h2><p>Use Activity to inspect the account trail. Transaction actions will be enabled after the fresh program deployment is verified.</p></section>
+          <section className="collection-note"><p className="panel-label">NEXT TRACE</p><h2>Every pulse leaves a readable mark.</h2><p>Use Activity to inspect the account trail. New actions remain behind wallet approval and receipt confirmation.</p></section>
         </>
       ) : (
         <ReadStateCard title={statusCopy[0]} description={statusCopy[1]} tone={organismRead.status === "error" ? "error" : "neutral"} />
@@ -985,6 +1301,7 @@ export default function App() {
   return (
     <div className="route-view" key={route}>
       {route === "dashboard" && <DashboardPage />}
+      {route === "wallet" && <WalletPage />}
       {route === "organisms" && <OrganismsPage />}
       {route === "activity" && <ActivityPage />}
       {route === "learn" && <LearnPage />}
