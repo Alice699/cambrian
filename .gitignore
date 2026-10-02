@@ -7,3 +7,6 @@
 # Installed dependencies.
 /node_modules/
 /apps/web/dist/
+
+# Retired footer experiment - local backup only.
+/tmp/retired-footer-coin/

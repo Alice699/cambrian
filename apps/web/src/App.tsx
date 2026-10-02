@@ -12,6 +12,8 @@ import {
 import { walletMetadata } from "@cambrian/wallet-core";
 import { claimFaucet, FaucetApiError } from "./faucet";
 import markAsset from "./assets/cambrian-mark.svg";
+import footerMarkAsset from "./assets/cambrian-mark-light.svg";
+import thruLogoAsset from "./assets/thru-logo.png";
 import networkDotAsset from "./assets/hero-organism.svg";
 import heroOrganismAsset from "./assets/organisms-thumbnail.svg";
 import organismsThumbnailAsset from "./assets/network-dot.svg";
@@ -667,12 +669,36 @@ function LearnPage() {
 
 function LandingFooter() {
   return (
-    <footer className="landing-footer" data-reveal="fade">
-      <div className="landing-footer-inner">
-        <div className="landing-footer-brand"><img src={markAsset} width="42" height="42" alt="" /><div><strong>CAMBRIAN</strong><p>A visual wallet for living state on Thru.</p></div></div>
-        <div className="landing-footer-links"><div><span>CAMBRIAN</span><a href="#lifecycle">How it works</a><a href="/app" onClick={(event) => navigateInternal("/app", event)}>Open app</a></div><div><span>THRU</span><a href="https://thru.org/docs/" target="_blank" rel="noreferrer">Documentation</a><a href="https://scan.thru.org/" target="_blank" rel="noreferrer">Betanet explorer</a></div></div>
+    <footer className="landing-footer" aria-label="Cambrian footer">
+      <div className="footer-content">
+        <div className="footer-intro" data-reveal="up">
+          <a className="footer-logo" href="/" aria-label="Cambrian home">
+            <img src={footerMarkAsset} width="36" height="36" alt="" />
+            <span>CAMBRIAN</span>
+          </a>
+          <p>A visual wallet for living state on Thru.</p>
+        </div>
+        <div className="footer-directory">
+          <nav className="footer-link-group" aria-label="Cambrian footer navigation">
+            <h3>Cambrian</h3>
+            <a href="#lifecycle">How it works</a>
+            <a href="/app" onClick={(event) => navigateInternal("/app", event)}>Open app</a>
+            <a href="/app/activity" onClick={(event) => navigateInternal("/app/activity", event)}>Activity</a>
+          </nav>
+          <nav className="footer-link-group" aria-label="Thru resources">
+            <h3>Thru</h3>
+            <a href="https://thru.org/docs/" target="_blank" rel="noreferrer">Documentation</a>
+            <a href="https://scan.thru.org/" target="_blank" rel="noreferrer">Betanet explorer</a>
+          </nav>
+        </div>
       </div>
-      <div className="landing-footer-bottom"><span>CAMBRIAN FOR THRU BETANET</span><span>Wallet · Faucet · Organisms</span></div>
+      <div className="footer-meta">
+        <div className="footer-meta-note"><span>© {new Date().getFullYear()} Cambrian</span><span>Betanet · Test assets only</span></div>
+        <a className="footer-network" href="https://thru.org/" target="_blank" rel="noreferrer" aria-label="Built on Thru — visit Thru">
+          <span className="footer-network-label"><small>Built on</small><strong>Thru</strong></span>
+          <img className="footer-thru-logo" src={thruLogoAsset} width="400" height="400" alt="" loading="lazy" decoding="async" />
+        </a>
+      </div>
     </footer>
   );
 }
