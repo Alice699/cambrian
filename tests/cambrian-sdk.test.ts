@@ -8,6 +8,8 @@ import {
   encodeBirthInstruction,
   utf8ToBytes32,
 } from "../packages/cambrian-sdk/src/abi.ts";
+import { CAMBRIAN_INSTRUCTION_ABI_NAME } from "../packages/cambrian-sdk/src/constants.ts";
+import { defaultCambrianConfig } from "../packages/config/src/index.ts";
 import { assertBirthDeployment } from "../packages/cambrian-sdk/src/deployment.ts";
 
 test("encodes birth instruction with the documented little-endian layout", () => {
@@ -99,4 +101,12 @@ test("does not allow a birth transaction before deployment IDs are configured", 
     }),
     /program ID is not configured yet/,
   );
+});
+
+test("ships the verified Betanet deployment and qualified review ABI name", () => {
+  assertBirthDeployment(defaultCambrianConfig);
+  assert.equal(defaultCambrianConfig.network, "betanet");
+  assert.equal(defaultCambrianConfig.programId, "taLnTXq4qblEsC-HkN4QG35Lp72Vnle8gk8UkiAtASymFD");
+  assert.equal(defaultCambrianConfig.abiId, "taPciIseW9AzTnNaB6VJyhHkiOwEDfZYwUbdPdfvbvUQuS");
+  assert.equal(CAMBRIAN_INSTRUCTION_ABI_NAME, "cambrian.lifeform.CambrianInstruction");
 });

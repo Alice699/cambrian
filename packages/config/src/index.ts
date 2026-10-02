@@ -11,16 +11,16 @@ export interface CambrianConfig {
 
 /**
  * Betanet is intentionally the only network exposed by the first product
- * slice. Program and ABI IDs stay empty until a fresh deployment is made;
- * the previous Betanet deployment was reset and must not be reused.
+ * slice. These IDs point at the fresh, verified Cambrian deployment used by
+ * the dapp. Keep overrides available for local or future deployments.
  */
 export const defaultCambrianConfig: CambrianConfig = {
   network: "betanet",
   rpcUrl: "https://rpc.betanet.thru.org",
   walletIframeUrl: "https://app.tid.sh/embedded",
   explorerUrl: "https://scan.thru.org",
-  programId: "",
-  abiId: "",
+  programId: "taLnTXq4qblEsC-HkN4QG35Lp72Vnle8gk8UkiAtASymFD",
+  abiId: "taPciIseW9AzTnNaB6VJyhHkiOwEDfZYwUbdPdfvbvUQuS",
 };
 
 export function createCambrianConfig(overrides: Partial<CambrianConfig> = {}): CambrianConfig {

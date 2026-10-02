@@ -8,6 +8,7 @@ import {
   randomBytes32,
   utf8ToBytes32,
 } from "./abi.js";
+import { CAMBRIAN_INSTRUCTION_ABI_NAME } from "./constants.js";
 
 export interface BirthIntentOptions {
   walletAddress: string;
@@ -67,7 +68,7 @@ export async function prepareBirthIntent(
       review: {
         appName: "Cambrian",
         programAddress: config.programId,
-        abiName: config.abiId || "CambrianInstruction",
+        abiName: CAMBRIAN_INSTRUCTION_ABI_NAME,
         instruction: "birth",
       },
     },

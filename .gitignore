@@ -8,5 +8,13 @@
 /node_modules/
 /apps/web/dist/
 
+# Local environment files. Keep the shareable template tracked.
+.env
+.env.*
+!.env.example
+
 # Retired footer experiment - local backup only.
 /tmp/retired-footer-coin/
+
+# Temporary clean checkout used for Thru Betanet deployment verification.
+/tmp/thru-program-deploy/

@@ -5,8 +5,8 @@ interface for creating an account, requesting test funds, reading on-chain
 activity, and interacting with persistent Cambrian organisms without using the
 CLI.
 
-> Cambrian is under active development. The current program and ABI IDs remain
-> unset until a fresh Betanet deployment is verified.
+> Cambrian is under active development. A fresh Cambrian program and ABI are
+> deployed and verified on Betanet; live wallet approval is still experimental.
 
 ## Features
 
@@ -53,7 +53,9 @@ success.
 
 ## Configuration
 
-Use .env.example as the reference for supported variables.
+Use .env.example as the reference for supported variables. The repository
+defaults already point at the verified Betanet deployment; VITE-prefixed values
+can override them for another environment.
 
 Important frontend variables:
 
@@ -101,8 +103,23 @@ variables.
 ## Current status
 
 The interface, wallet integration, read services, guarded Birth flow, and
-faucet boundary are implemented. Live Birth and faucet payouts still require
-verified Betanet deployment IDs and an approved native-faucet provider.
+faucet boundary are implemented. The fresh program and ABI are live on Betanet,
+and the published ABI was read back and matched locally. Live Birth still needs
+wallet/passkey end-to-end verification, while faucet payouts still need an
+approved native-faucet provider.
+
+### Verified Betanet deployment
+
+| Resource | Address | Status |
+| --- | --- | --- |
+| Cambrian program | `taLnTXq4qblEsC-HkN4QG35Lp72Vnle8gk8UkiAtASymFD` | Live |
+| Cambrian ABI | `taPciIseW9AzTnNaB6VJyhHkiOwEDfZYwUbdPdfvbvUQuS` | Published and read back |
+| Program binary | SHA-256 `9B22018403F4CA745E22B5F13A71B63E7F01423FC75AF18423D3F89D5F3359AD` | Verified |
+
+Explorer links:
+
+- [Program account](https://scan.thru.org/address/taLnTXq4qblEsC-HkN4QG35Lp72Vnle8gk8UkiAtASymFD?rpc=https%3A%2F%2Frpc.betanet.thru.org)
+- [ABI account](https://scan.thru.org/address/taPciIseW9AzTnNaB6VJyhHkiOwEDfZYwUbdPdfvbvUQuS?rpc=https%3A%2F%2Frpc.betanet.thru.org)
 
 ## Security
 
