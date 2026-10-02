@@ -3158,3 +3158,271 @@ button { cursor: pointer; }
   border-top-color: rgba(242, 239, 229, .12);
   color: #809082;
 }
+
+/* Multi-account wallet controls: compact like an extension account switcher. */
+.wallet-local-manager {
+  margin: 11px 20px 0;
+}
+.wallet-local-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+.wallet-account-switcher,
+.wallet-add-wallet {
+  min-height: 42px;
+  border: 1px solid rgba(242, 239, 229, .16);
+  border-radius: 11px;
+  background: #17211b;
+  color: #e5ebe2;
+  text-align: left;
+}
+.wallet-account-switcher {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 11px;
+}
+.wallet-account-switcher span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.wallet-account-switcher small {
+  color: #809184;
+  font: 600 7px/10px "IBM Plex Sans", sans-serif;
+  letter-spacing: .9px;
+}
+.wallet-account-switcher strong {
+  overflow: hidden;
+  color: #e5ebe2;
+  font: 600 11px/15px "IBM Plex Sans", sans-serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wallet-account-switcher b,
+.wallet-add-wallet {
+  color: #aac1ad;
+  font: 600 9px/13px "IBM Plex Sans", sans-serif;
+}
+.wallet-account-switcher b {
+  flex: 0 0 auto;
+  letter-spacing: .35px;
+  text-transform: uppercase;
+}
+.wallet-account-switcher:hover,
+.wallet-add-wallet:hover {
+  border-color: rgba(210, 229, 211, .38);
+  background: #202d24;
+}
+.wallet-add-wallet {
+  padding: 0 12px;
+  border-color: rgba(242, 239, 229, .18);
+  background: transparent;
+  white-space: nowrap;
+}
+.wallet-account-menu {
+  display: grid;
+  gap: 6px;
+  margin-top: 7px;
+  padding: 9px;
+  border: 1px solid rgba(242, 239, 229, .14);
+  border-radius: 13px;
+  background: #17211b;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, .18);
+  animation: wallet-popover-content-in .22s ease both;
+}
+.wallet-account-menu-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 3px 5px;
+}
+.wallet-account-menu-head span {
+  color: #92a296;
+  font: 600 7px/10px "IBM Plex Sans", sans-serif;
+  letter-spacing: .9px;
+}
+.wallet-account-menu-head small {
+  color: #64756a;
+  font: 400 9px/12px "IBM Plex Sans", sans-serif;
+}
+.wallet-account-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px;
+  align-items: center;
+  padding: 5px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+}
+.wallet-account-option.is-active {
+  border-color: rgba(170, 198, 174, .22);
+  background: rgba(116, 151, 121, .1);
+}
+.wallet-account-option > button:first-child {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+  padding: 3px 2px;
+  border: 0;
+  background: transparent;
+  color: #e5ebe2;
+  text-align: left;
+}
+.wallet-account-option > button:first-child > span:not(.wallet-account-mini-avatar) {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.wallet-account-option strong {
+  overflow: hidden;
+  color: #e5ebe2;
+  font: 600 11px/15px "IBM Plex Sans", sans-serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wallet-account-option small {
+  color: #85988a;
+  font: 400 9px/12px "IBM Plex Sans", sans-serif;
+}
+.wallet-account-mini-avatar {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(242, 239, 229, .15);
+  border-radius: 9px;
+  background: #26372b;
+  color: #d8e4d8;
+  font: 600 11px/1 "Space Grotesk", sans-serif;
+}
+.wallet-account-option.is-active .wallet-account-mini-avatar {
+  border-color: rgba(215, 232, 214, .34);
+  background: #dce8d9;
+  color: #17211b;
+}
+.wallet-account-option > button:first-child > i {
+  width: 6px;
+  height: 6px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: #88aa8e;
+  box-shadow: 0 0 0 3px rgba(136, 170, 142, .1);
+}
+.wallet-rename-button,
+.wallet-rename-form button {
+  min-height: 26px;
+  padding: 0 7px;
+  border: 1px solid rgba(242, 239, 229, .16);
+  border-radius: 7px;
+  background: transparent;
+  color: #91a394;
+  font: 600 8px/11px "IBM Plex Sans", sans-serif;
+}
+.wallet-rename-button:hover,
+.wallet-rename-form button:hover {
+  border-color: rgba(214, 232, 215, .4);
+  color: #f2efe5;
+}
+.wallet-rename-form {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+.wallet-rename-form input {
+  width: 92px;
+  min-height: 27px;
+  padding: 0 7px;
+  border: 1px solid rgba(242, 239, 229, .22);
+  border-radius: 7px;
+  background: #101713;
+  color: #f2efe5;
+  font: 400 9px/12px "IBM Plex Sans", sans-serif;
+  outline: 0;
+}
+.wallet-rename-form input:focus { border-color: #91ad94; }
+
+.wallet-send-panel {
+  display: grid;
+  gap: 10px;
+  margin: 17px 20px 0;
+  padding: 15px;
+  border: 1px solid rgba(242, 239, 229, .14);
+  border-radius: 13px;
+  background: #17211b;
+  animation: wallet-popover-content-in .24s ease both;
+}
+.wallet-send-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.wallet-send-heading > div { display: grid; gap: 4px; }
+.wallet-send-heading span {
+  color: #8da190;
+  font: 600 7px/10px "IBM Plex Sans", sans-serif;
+  letter-spacing: .9px;
+}
+.wallet-send-heading h3 {
+  margin: 0;
+  color: #f2efe5;
+  font: 600 19px/23px "Space Grotesk", sans-serif;
+  letter-spacing: -.55px;
+}
+.wallet-send-heading button {
+  min-height: 26px;
+  padding: 0 8px;
+  border: 1px solid rgba(242, 239, 229, .18);
+  border-radius: 7px;
+  background: transparent;
+  color: #a8b7aa;
+  font: 600 8px/11px "IBM Plex Sans", sans-serif;
+}
+.wallet-send-heading button:hover { border-color: rgba(242, 239, 229, .42); color: #f2efe5; }
+.wallet-send-copy {
+  margin: 0;
+  color: #94a397;
+  font-size: 10px;
+  line-height: 15px;
+}
+.wallet-send-panel label {
+  display: grid;
+  gap: 5px;
+  color: #91a194;
+  font: 600 8px/11px "IBM Plex Sans", sans-serif;
+  letter-spacing: .55px;
+}
+.wallet-send-panel input {
+  width: 100%;
+  min-height: 37px;
+  padding: 0 10px;
+  border: 1px solid rgba(242, 239, 229, .16);
+  border-radius: 8px;
+  background: #101713;
+  color: #f2efe5;
+  font: 400 11px/15px "IBM Plex Sans", sans-serif;
+  outline: 0;
+}
+.wallet-send-panel input:focus { border-color: #92ad95; box-shadow: 0 0 0 3px rgba(146, 173, 149, .1); }
+.wallet-send-panel .wallet-popover-primary { min-height: 38px; }
+.wallet-popover.is-connected .wallet-local-manager { margin-top: 11px; }
+.wallet-popover.is-connected .wallet-popover-form { color: #f2efe5; }
+.wallet-popover.is-connected .wallet-popover-form-heading h2 { color: #f2efe5; }
+.wallet-popover.is-connected .wallet-popover-form-heading p,
+.wallet-popover.is-connected .wallet-popover-form label { color: #9aaa9d; }
+.wallet-popover.is-connected .wallet-popover-back { color: #a8b7aa; }
+.wallet-popover.is-connected .wallet-popover-back:hover { color: #f2efe5; }
+
+@media (max-width: 420px) {
+  .wallet-local-toolbar { grid-template-columns: 1fr; }
+  .wallet-add-wallet { min-height: 36px; }
+  .wallet-account-option { grid-template-columns: 1fr; }
+  .wallet-rename-form { padding-left: 37px; }
+}

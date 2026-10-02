@@ -159,15 +159,16 @@ function WalletChip({ refreshKey = 0, onFaucet, faucetBusy = false }: WalletChip
   }, [localWallet.account?.address, localWallet.status, selectedAccount?.address, thru, refreshKey]);
 
   const localAddress = localWallet.status === "unlocked" ? localWallet.account?.address : undefined;
+  const activeLocalWallet = localWallet.wallets.find((wallet) => wallet.id === localWallet.activeWalletId);
   const label = localAddress
-    ? shortenAddress(localAddress)
+    ? activeLocalWallet?.name ?? shortenAddress(localAddress)
     : selectedAccount && isConnected
       ? shortenAddress(selectedAccount.address)
       : localWallet.status === "locked" ? "Unlock wallet" : "Open wallet";
   const detail = walletError
     ? walletError
     : localAddress
-      ? balance === null ? "Reading local balance..." : `Self-custody / ${balance} units`
+      ? balance === null ? "Reading local balance..." : `Self-custody · ${balance} THRU`
       : selectedAccount
       ? balance === null ? "Reading balance…" : `Balance ${balance} units`
       : localWallet.status === "locked" ? "Encrypted vault on this device" : "Create or connect account";
@@ -603,7 +604,7 @@ function DashboardPage() {
   );
 }
 
-type WalletPopoverAction = "connect" | "manage" | "disconnect" | "create" | "restore" | "unlock" | null;
+type WalletPopoverAction = "connect" | "manage" | "disconnect" | "create" | "restore" | "unlock" | "switch" | "rename" | null;
 
 type WalletPopoverProps = {
   onClose: () => void;
@@ -630,6 +631,8 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
   const { thru, error: sdkError } = useThru();
   const { connect, manageAccounts, disconnect, isConnected, isConnecting, selectedAccount } = useWallet();
   const [mode, setMode] = useState<"create" | "restore">("create");
+  const [walletName, setWalletName] = useState("Wallet 1");
+  const [isAddingWallet, setIsAddingWallet] = useState(false);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [phrase, setPhrase] = useState("");
@@ -640,13 +643,20 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
   const [balance, setBalance] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [showLocalSetup, setShowLocalSetup] = useState(false);
+  const [showWallets, setShowWallets] = useState(false);
+  const [editingWalletId, setEditingWalletId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [showSend, setShowSend] = useState(false);
+  const [sendRecipient, setSendRecipient] = useState("");
+  const [sendAmount, setSendAmount] = useState("");
 
   const localAddress = localWallet.status === "unlocked" ? localWallet.account?.address ?? null : null;
   const hostedConnected = Boolean(isConnected && selectedAccount);
   const hostedAddress = hostedConnected ? selectedAccount?.address ?? null : null;
   const address = localAddress ?? hostedAddress;
   const usingLocalWallet = Boolean(localAddress);
-  const showSetup = localWallet.status === "absent" && showLocalSetup;
+  const activeLocalWallet = localWallet.wallets.find((wallet) => wallet.id === localWallet.activeWalletId);
+  const showSetup = showLocalSetup && (localWallet.status === "absent" || isAddingWallet);
 
   useEffect(() => {
     setError(sdkError?.message ?? null);
@@ -682,18 +692,26 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
     setFeedback(null);
     try {
       if (nextAction === "create") {
-        if (password !== confirmPassword) throw new Error("Wallet passwords do not match");
-        const result = await localWalletController.create(password);
+        if (!isAddingWallet && password !== confirmPassword) throw new Error("Wallet passwords do not match");
+        const result = isAddingWallet
+          ? await localWalletController.add(password, walletName)
+          : await localWalletController.create(password, walletName);
         setRecoveryPhrase(result.recoveryPhrase);
         setPassword("");
         setConfirmPassword("");
-        setFeedback("Wallet created on this device.");
+        setIsAddingWallet(false);
+        setShowLocalSetup(false);
+        setFeedback(isAddingWallet ? `${result.wallet.name} added to this device.` : `${result.wallet.name} created on this device.`);
       } else if (nextAction === "restore") {
-        const restored = await localWalletController.restore(phrase, password);
+        const restored = isAddingWallet
+          ? await localWalletController.add(password, walletName, phrase)
+          : await localWalletController.restore(phrase, password, walletName);
         setPhrase("");
         setPassword("");
         setRecoveryPhrase(null);
-        setFeedback(`Restored ${shortenAddress(restored.address)}.`);
+        setIsAddingWallet(false);
+        setShowLocalSetup(false);
+        setFeedback(`Restored ${shortenAddress("account" in restored ? restored.account.address : restored.address)}.`);
       } else if (nextAction === "unlock") {
         await localWalletController.unlock(password);
         setPassword("");
@@ -702,6 +720,10 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
         await connect({ metadata: walletMetadata, passkeyName: "Cambrian" });
       } else if (nextAction === "manage") {
         await manageAccounts();
+      } else if (nextAction === "switch") {
+        throw new Error("Choose a wallet from the account list first");
+      } else if (nextAction === "rename") {
+        throw new Error("Enter a wallet name first");
       } else {
         await disconnect();
         setFeedback("Thru Wallet disconnected.");
@@ -712,6 +734,68 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
     } finally {
       setAction(null);
     }
+  };
+
+  const openLocalSetup = (nextMode: "create" | "restore", adding = false) => {
+    setMode(nextMode);
+    setIsAddingWallet(adding);
+    setWalletName(adding ? `Wallet ${localWallet.wallets.length + 1}` : "Wallet 1");
+    setPhrase("");
+    setPassword("");
+    setConfirmPassword("");
+    setRecoveryPhrase(null);
+    setShowWallets(false);
+    setShowSend(false);
+    setShowLocalSetup(true);
+    setError(null);
+    setFeedback(null);
+  };
+
+  const switchLocalWallet = async (walletId: string) => {
+    if (action) return;
+    setAction("switch");
+    setError(null);
+    try {
+      const nextAccount = await localWalletController.switchWallet(walletId);
+      const nextWallet = localWalletController.getSnapshot().wallets.find((wallet) => wallet.id === walletId);
+      setShowWallets(false);
+      setShowSend(false);
+      setFeedback(`Switched to ${nextWallet?.name ?? shortenAddress(nextAccount.address)}.`);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Could not switch wallet");
+    } finally {
+      setAction(null);
+    }
+  };
+
+  const saveWalletName = async (walletId: string) => {
+    if (action) return;
+    const nextName = renameValue.trim();
+    if (!nextName) {
+      setError("Enter a wallet name first");
+      return;
+    }
+    setAction("rename");
+    setError(null);
+    try {
+      const renamed = await localWalletController.rename(walletId, nextName);
+      setEditingWalletId(null);
+      setFeedback(`${renamed.name} saved.`);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Could not rename wallet");
+    } finally {
+      setAction(null);
+    }
+  };
+
+  const submitSend = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError(null);
+    if (!sendRecipient.trim() || !sendAmount.trim()) {
+      setError("Enter a recipient and amount first");
+      return;
+    }
+    setFeedback("Send is staged in the interface, but no transaction was created. Native THRU transfer wiring is still pending ABI verification.");
   };
 
   const copy = async (value: string, successMessage: string) => {
@@ -763,11 +847,11 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
         <b>{stateLabel}</b>
       </div>
 
-      {address && (
+      {address && !showSetup && (
         <div className="wallet-popover-account">
           <span className={`wallet-account-avatar ${usingLocalWallet ? "is-local" : "is-hosted"}`} aria-hidden="true"><i /><i /><i /></span>
           <div className="wallet-popover-account-copy">
-            <span>{usingLocalWallet ? "LOCAL WALLET" : "THRU WALLET"}</span>
+            <span>{usingLocalWallet ? activeLocalWallet?.name ?? "LOCAL WALLET" : "THRU WALLET"}</span>
             <strong>{shortenAddress(address)}</strong>
             <button type="button" onClick={() => void copy(address, "Address copied.")} aria-label="Copy wallet address">{copied ? "Copied" : "Copy address"}</button>
           </div>
@@ -775,7 +859,41 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
         </div>
       )}
 
-      {address && (
+      {usingLocalWallet && !showSetup && (
+        <div className="wallet-local-manager">
+          <div className="wallet-local-toolbar">
+            <button className="wallet-account-switcher" type="button" onClick={() => setShowWallets((current) => !current)} aria-expanded={showWallets}>
+              <span><small>LOCAL ACCOUNTS</small><strong>{localWallet.wallets.length} {localWallet.wallets.length === 1 ? "wallet" : "wallets"}</strong></span>
+              <b>{showWallets ? "Close" : "Switch"}</b>
+            </button>
+            <button className="wallet-add-wallet" type="button" onClick={() => openLocalSetup("create", true)}>Add wallet</button>
+          </div>
+          {showWallets && (
+            <div className="wallet-account-menu">
+              <div className="wallet-account-menu-head"><span>YOUR WALLETS</span><small>Keys stay on this device</small></div>
+              {localWallet.wallets.map((wallet) => (
+                <div className={`wallet-account-option ${wallet.id === localWallet.activeWalletId ? "is-active" : ""}`} key={wallet.id}>
+                  <button type="button" onClick={() => void switchLocalWallet(wallet.id)} disabled={Boolean(action)}>
+                    <span className="wallet-account-mini-avatar" aria-hidden="true">{wallet.name.slice(0, 1).toUpperCase()}</span>
+                    <span><strong>{wallet.name}</strong><small>{shortenAddress(wallet.account.address)}</small></span>
+                    {wallet.id === localWallet.activeWalletId && <i aria-label="Active wallet" />}
+                  </button>
+                  {editingWalletId === wallet.id ? (
+                    <div className="wallet-rename-form">
+                      <input value={renameValue} onChange={(event) => setRenameValue(event.target.value)} maxLength={32} aria-label={`Rename ${wallet.name}`} autoFocus />
+                      <button type="button" onClick={() => void saveWalletName(wallet.id)} disabled={action === "rename"}>{action === "rename" ? "Saving" : "Save"}</button>
+                    </div>
+                  ) : (
+                    <button className="wallet-rename-button" type="button" onClick={() => { setEditingWalletId(wallet.id); setRenameValue(wallet.name); setError(null); }}>Rename</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {address && !showSetup && (
         <div className="wallet-popover-balance">
           <div><span>PORTFOLIO BALANCE</span><strong>{balance ?? "—"}</strong><small className="wallet-popover-balance-unit">THRU</small></div>
           <small className="wallet-popover-balance-network"><b>BETANET</b></small>
@@ -792,9 +910,10 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
         </div>
       )}
 
-      {localWallet.status === "unlocked" && localAddress ? (
+      {localWallet.status === "unlocked" && localAddress && !showSetup ? (
         <div className="wallet-popover-actions wallet-popover-connected-actions">
           {onFaucet && <button className="wallet-popover-primary" type="button" onClick={onFaucet} disabled={faucetBusy}>{faucetBusy ? "Requesting..." : "Get faucet"}</button>}
+          <button className="wallet-popover-secondary" type="button" onClick={() => { setShowSend(true); setFeedback(null); setError(null); }} disabled={Boolean(action)}>Send</button>
           <button className="wallet-popover-secondary" type="button" onClick={() => void copy(localAddress, "Address copied.")} disabled={Boolean(action)}>{copied ? "Address copied" : "Copy address"}</button>
           <button className="wallet-popover-link" type="button" onClick={() => { localWalletController.lock(); setRecoveryPhrase(null); setFeedback("Local wallet locked."); }} disabled={Boolean(action)}>Lock wallet</button>
         </div>
@@ -809,22 +928,23 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
         <div className="wallet-popover-loading"><span className="wallet-popover-spinner" />Checking this device...</div>
       ) : showSetup ? (
         <form className="wallet-popover-form wallet-popover-setup" onSubmit={submit}>
-          <button className="wallet-popover-back" type="button" onClick={() => setShowLocalSetup(false)}>Back to wallet choices</button>
-          <div className="wallet-popover-form-heading"><span>LOCAL SELF-CUSTODY</span><h2>{mode === "create" ? "Create your wallet." : "Import your wallet."}</h2><p>{mode === "create" ? "A small encrypted vault kept on this browser." : "Use your recovery phrase to restore an existing account."}</p></div>
+          <button className="wallet-popover-back" type="button" onClick={() => { setShowLocalSetup(false); setIsAddingWallet(false); }}>Back to wallet choices</button>
+          <div className="wallet-popover-form-heading"><span>{isAddingWallet ? "ADD LOCAL WALLET" : "LOCAL SELF-CUSTODY"}</span><h2>{mode === "create" ? isAddingWallet ? "Add a wallet." : "Create your wallet." : isAddingWallet ? "Import a wallet." : "Import your wallet."}</h2><p>{mode === "create" ? "A small encrypted vault kept on this browser." : "Use your recovery phrase to restore an existing account."}</p></div>
+          <label>Wallet name<input type="text" value={walletName} onChange={(event) => setWalletName(event.target.value)} placeholder="Wallet 1" maxLength={32} autoComplete="off" required /></label>
           {mode === "restore" && <label>Recovery phrase<textarea value={phrase} onChange={(event) => setPhrase(event.target.value)} placeholder="Enter your 12-word phrase" autoComplete="off" required /></label>}
           <div className="wallet-popover-fields">
-            <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" minLength={8} required /></label>
-            {mode === "create" && <label>Confirm<input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={8} required /></label>}
+            <label>{isAddingWallet ? "Vault password" : "Password"}<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={isAddingWallet ? "current-password" : "new-password"} minLength={8} required /></label>
+            {mode === "create" && !isAddingWallet && <label>Confirm<input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={8} required /></label>}
           </div>
-          <button className="wallet-popover-primary" type="submit" disabled={action === mode}>{action === mode ? mode === "create" ? "Creating..." : "Importing..." : mode === "create" ? "Create wallet" : "Import wallet"}</button>
+          <button className="wallet-popover-primary" type="submit" disabled={action === mode}>{action === mode ? mode === "create" ? isAddingWallet ? "Adding..." : "Creating..." : isAddingWallet ? "Importing..." : "Restoring..." : mode === "create" ? isAddingWallet ? "Add wallet" : "Create wallet" : isAddingWallet ? "Import wallet" : "Restore wallet"}</button>
           <small>Your recovery phrase is the only way to recover this account on another device.</small>
         </form>
       ) : localWallet.status === "absent" && !hostedConnected ? (
         <div className="wallet-popover-start">
           <div className="wallet-popover-intro"><span>WELCOME TO CAMBRIAN</span><h2>Set up your wallet.</h2><p>Create a local vault or connect Thru Wallet to get started.</p></div>
           <div className="wallet-popover-choices">
-            <button className="wallet-choice is-primary" type="button" onClick={() => { setMode("create"); setShowLocalSetup(true); setError(null); }}><WalletOptionIcon kind="create" /><span><strong>Create a wallet</strong><small>Securely stored on this device</small></span><b className="wallet-choice-meta">RECOMMENDED</b></button>
-            <button className="wallet-choice" type="button" onClick={() => { setMode("restore"); setShowLocalSetup(true); setError(null); }}><WalletOptionIcon kind="restore" /><span><strong>Import a wallet</strong><small>Restore with your recovery phrase</small></span></button>
+            <button className="wallet-choice is-primary" type="button" onClick={() => openLocalSetup("create")}><WalletOptionIcon kind="create" /><span><strong>Create a wallet</strong><small>Securely stored on this device</small></span><b className="wallet-choice-meta">RECOMMENDED</b></button>
+            <button className="wallet-choice" type="button" onClick={() => openLocalSetup("restore")}><WalletOptionIcon kind="restore" /><span><strong>Import a wallet</strong><small>Restore with your recovery phrase</small></span></button>
           </div>
           <div className="wallet-popover-rule"><span>OR CONNECT AN EXTERNAL WALLET</span></div>
           <button className="wallet-popover-thru" type="button" onClick={() => void runAction("connect")} disabled={Boolean(action)}><WalletOptionIcon kind="thru" /><span><strong>{action === "connect" ? "Opening Thru Wallet..." : "Use Thru Wallet"}</strong><small>Connect an existing Thru account</small></span></button>
@@ -834,6 +954,7 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
       {hostedConnected && !localAddress && (
         <div className="wallet-popover-actions wallet-popover-hosted-actions">
           <button className="wallet-popover-primary" type="button" onClick={() => void runAction("manage")} disabled={Boolean(action)}>{action === "manage" ? "Loading..." : "Manage account"}</button>
+          <button className="wallet-popover-secondary" type="button" onClick={() => { setShowSend(true); setFeedback(null); setError(null); }} disabled={Boolean(action)}>Send</button>
           {hostedAddress && <button className="wallet-popover-secondary" type="button" onClick={() => void copy(hostedAddress, "Address copied.")} disabled={Boolean(action)}>{copied ? "Address copied" : "Copy address"}</button>}
           <button className="wallet-popover-link" type="button" onClick={() => void runAction("disconnect")} disabled={Boolean(action)}>Disconnect</button>
         </div>
@@ -852,6 +973,16 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
             <span className="wallet-asset-amount"><strong>{balance ?? "—"}</strong><small>THRU</small></span>
           </div>
         </section>
+      )}
+
+      {showSend && address && (
+        <form className="wallet-send-panel" onSubmit={submitSend}>
+          <div className="wallet-send-heading"><div><span>SEND THRU</span><h3>Move native THRU.</h3></div><button type="button" onClick={() => setShowSend(false)}>Close</button></div>
+          <p className="wallet-send-copy">Review the recipient and amount here before signing. The native transfer instruction is not connected yet, so submitting this form will never move funds.</p>
+          <label>Recipient address<input value={sendRecipient} onChange={(event) => setSendRecipient(event.target.value)} placeholder="ta..." autoComplete="off" /></label>
+          <label>Amount<input type="number" min="0" step="any" value={sendAmount} onChange={(event) => setSendAmount(event.target.value)} placeholder="0.00" inputMode="decimal" /></label>
+          <button className="wallet-popover-primary" type="submit">Review send</button>
+        </form>
       )}
 
       {(error || localWallet.error) && <p className="wallet-popover-error" role="alert">{error ?? localWallet.error}</p>}

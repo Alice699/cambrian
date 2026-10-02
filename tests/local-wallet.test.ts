@@ -50,6 +50,33 @@ test("restores the same account from its recovery phrase and signs messages", as
   assert.equal(valid, true);
 });
 
+test("keeps named local wallets switchable inside one encrypted vault", async () => {
+  const storage = new MemoryLocalWalletStorage();
+  const controller = new LocalWalletController({ rpcUrl: "https://rpc.betanet.thru.org", storage });
+  const first = await controller.create("shared vault password", "Main wallet");
+  const second = await controller.add("shared vault password", "Savings");
+
+  assert.equal(controller.getSnapshot().wallets.length, 2);
+  assert.deepEqual(controller.getSnapshot().wallets.map((wallet) => wallet.name), ["Main wallet", "Savings"]);
+  assert.equal(controller.getSnapshot().activeWalletId, second.wallet.id);
+  assert.notEqual(first.account.address, second.account.address);
+
+  await controller.switchWallet(first.wallet.id);
+  assert.equal(controller.getSnapshot().account?.address, first.account.address);
+  await controller.rename(first.wallet.id, "Daily wallet");
+  assert.equal(controller.getSnapshot().wallets[0]?.name, "Daily wallet");
+
+  const record = await storage.read();
+  assert.ok(record);
+  assert.equal(JSON.stringify(record).includes(first.recoveryPhrase), false);
+  assert.equal(JSON.stringify(record).includes(second.recoveryPhrase), false);
+
+  controller.lock();
+  await controller.unlock("shared vault password");
+  assert.equal(controller.getSnapshot().account?.address, first.account.address);
+  assert.deepEqual(controller.getSnapshot().wallets.map((wallet) => wallet.name), ["Daily wallet", "Savings"]);
+});
+
 test("local transaction signer decodes Thru intent data before using the SDK builder", async () => {
   const keyPair = await keys.generateKeyPair();
   const account = {
