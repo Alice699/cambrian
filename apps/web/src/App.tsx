@@ -612,6 +612,19 @@ type WalletPopoverProps = {
   faucetBusy?: boolean;
 };
 
+function WalletOptionIcon({ kind }: { kind: "create" | "restore" | "thru" }) {
+  return (
+    <span className={`wallet-choice-icon is-${kind}`} aria-hidden="true">
+      {kind === "thru" ? <img src={thruLogoAsset} width="34" height="34" alt="" /> : (
+        <svg viewBox="0 0 24 24" focusable="false">
+          {kind === "create" && <><path d="M5.1 7.2h13.4a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2H5.5a2.3 2.3 0 0 1-2.3-2.3V7.2Z" /><path d="M3.2 7.2V5.8a2 2 0 0 1 2-2h8.1a2 2 0 0 1 1.8 1.2" /><path d="M15.8 12.3v4.1M13.8 14.3h4" /></>}
+          {kind === "restore" && <><path d="M7.1 5.1h9.8a2 2 0 0 1 2 2v9.8a2 2 0 0 1-2 2H7.1a2 2 0 0 1-2-2V7.1a2 2 0 0 1 2-2Z" /><path d="M12 8.1v7.5M8.8 12.5l3.2 3.1 3.2-3.1" /></>}
+        </svg>
+      )}
+    </span>
+  );
+}
+
 function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }: WalletPopoverProps) {
   const localWallet = useLocalWallet();
   const { thru, error: sdkError } = useThru();
@@ -633,7 +646,7 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
   const hostedAddress = hostedConnected ? selectedAccount?.address ?? null : null;
   const address = localAddress ?? hostedAddress;
   const usingLocalWallet = Boolean(localAddress);
-  const showSetup = localWallet.status === "absent" && (!hostedConnected || showLocalSetup);
+  const showSetup = localWallet.status === "absent" && showLocalSetup;
 
   useEffect(() => {
     setError(sdkError?.message ?? null);
@@ -736,7 +749,7 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
               : "Not connected";
 
   return (
-    <section className="wallet-popover" role="dialog" aria-label="Cambrian wallet">
+    <section className={`wallet-popover ${address ? "is-connected" : ""}`} role="dialog" aria-label="Cambrian wallet">
       <header className="wallet-popover-head">
         <div className="wallet-popover-brand">
           <img src={markAsset} width="28" height="28" alt="" />
@@ -752,9 +765,9 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
 
       {address && (
         <div className="wallet-popover-account">
-          <div className="wallet-account-avatar" aria-hidden="true">C</div>
+          <span className={`wallet-account-avatar ${usingLocalWallet ? "is-local" : "is-hosted"}`} aria-hidden="true"><i /><i /><i /></span>
           <div className="wallet-popover-account-copy">
-            <span>{usingLocalWallet ? "LOCAL ACCOUNT" : "THRU WALLET ACCOUNT"}</span>
+            <span>{usingLocalWallet ? "LOCAL WALLET" : "THRU WALLET"}</span>
             <strong>{shortenAddress(address)}</strong>
             <button type="button" onClick={() => void copy(address, "Address copied.")} aria-label="Copy wallet address">{copied ? "Copied" : "Copy address"}</button>
           </div>
@@ -765,7 +778,7 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
       {address && (
         <div className="wallet-popover-balance">
           <div><span>AVAILABLE BALANCE</span><strong>{balance ?? "—"}</strong></div>
-          <small>THRU<br />BETANET</small>
+          <small><b>THRU</b><em>BETANET</em></small>
         </div>
       )}
 
@@ -780,33 +793,42 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
       )}
 
       {localWallet.status === "unlocked" && localAddress ? (
-        <div className="wallet-popover-actions">
+        <div className="wallet-popover-actions wallet-popover-connected-actions">
           {onFaucet && <button className="wallet-popover-primary" type="button" onClick={onFaucet} disabled={faucetBusy}>{faucetBusy ? "Requesting..." : "Get faucet"}</button>}
           <button className="wallet-popover-secondary" type="button" onClick={() => void copy(localAddress, "Address copied.")} disabled={Boolean(action)}>{copied ? "Address copied" : "Copy address"}</button>
           <button className="wallet-popover-link" type="button" onClick={() => { localWalletController.lock(); setRecoveryPhrase(null); setFeedback("Local wallet locked."); }} disabled={Boolean(action)}>Lock wallet</button>
         </div>
       ) : localWallet.status === "locked" ? (
-        <form className="wallet-popover-form" onSubmit={submit}>
+        <form className="wallet-popover-form wallet-popover-unlock" onSubmit={submit}>
+          <div className="wallet-popover-form-heading"><span>LOCAL SELF-CUSTODY</span><h2>Unlock your wallet.</h2><p>The vault stays encrypted until you unlock it on this device.</p></div>
           <label>Vault password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" minLength={8} required /></label>
-          <button className="wallet-popover-primary" type="submit" disabled={action === "unlock"}>{action === "unlock" ? "Unlocking..." : "Unlock local wallet"}</button>
+          <button className="wallet-popover-primary" type="submit" disabled={action === "unlock"}>{action === "unlock" ? "Unlocking..." : "Unlock wallet"}</button>
           <small>The private key is decrypted only in memory while unlocked.</small>
         </form>
       ) : localWallet.status === "loading" ? (
         <div className="wallet-popover-loading"><span className="wallet-popover-spinner" />Checking this device...</div>
       ) : showSetup ? (
-        <form className="wallet-popover-form" onSubmit={submit}>
-          <div className="wallet-popover-tabs" role="tablist" aria-label="Wallet setup">
-            <button type="button" className={mode === "create" ? "is-active" : ""} onClick={() => { setMode("create"); setError(null); }}>Create new</button>
-            <button type="button" className={mode === "restore" ? "is-active" : ""} onClick={() => { setMode("restore"); setError(null); }}>Restore phrase</button>
-          </div>
+        <form className="wallet-popover-form wallet-popover-setup" onSubmit={submit}>
+          <button className="wallet-popover-back" type="button" onClick={() => setShowLocalSetup(false)}>Back to wallet choices</button>
+          <div className="wallet-popover-form-heading"><span>LOCAL SELF-CUSTODY</span><h2>{mode === "create" ? "Create your wallet." : "Import your wallet."}</h2><p>{mode === "create" ? "A small encrypted vault kept on this browser." : "Use your recovery phrase to restore an existing account."}</p></div>
           {mode === "restore" && <label>Recovery phrase<textarea value={phrase} onChange={(event) => setPhrase(event.target.value)} placeholder="Enter your 12-word phrase" autoComplete="off" required /></label>}
           <div className="wallet-popover-fields">
             <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" minLength={8} required /></label>
             {mode === "create" && <label>Confirm<input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={8} required /></label>}
           </div>
-          <button className="wallet-popover-primary" type="submit" disabled={action === mode}>{action === mode ? mode === "create" ? "Creating..." : "Restoring..." : mode === "create" ? "Create local wallet" : "Restore wallet"}</button>
+          <button className="wallet-popover-primary" type="submit" disabled={action === mode}>{action === mode ? mode === "create" ? "Creating..." : "Importing..." : mode === "create" ? "Create wallet" : "Import wallet"}</button>
           <small>Your recovery phrase is the only way to recover this account on another device.</small>
         </form>
+      ) : localWallet.status === "absent" && !hostedConnected ? (
+        <div className="wallet-popover-start">
+          <div className="wallet-popover-intro"><span>WELCOME TO CAMBRIAN</span><h2>Set up your wallet.</h2><p>Create a local vault or connect Thru Wallet to get started.</p></div>
+          <div className="wallet-popover-choices">
+            <button className="wallet-choice is-primary" type="button" onClick={() => { setMode("create"); setShowLocalSetup(true); setError(null); }}><WalletOptionIcon kind="create" /><span><strong>Create a wallet</strong><small>Securely stored on this device</small></span><b className="wallet-choice-meta">RECOMMENDED</b></button>
+            <button className="wallet-choice" type="button" onClick={() => { setMode("restore"); setShowLocalSetup(true); setError(null); }}><WalletOptionIcon kind="restore" /><span><strong>Import a wallet</strong><small>Restore with your recovery phrase</small></span></button>
+          </div>
+          <div className="wallet-popover-rule"><span>OR CONNECT AN EXTERNAL WALLET</span></div>
+          <button className="wallet-popover-thru" type="button" onClick={() => void runAction("connect")} disabled={Boolean(action)}><WalletOptionIcon kind="thru" /><span><strong>{action === "connect" ? "Opening Thru Wallet..." : "Use Thru Wallet"}</strong><small>Connect an existing Thru account</small></span></button>
+        </div>
       ) : null}
 
       {hostedConnected && !localAddress && (
@@ -819,10 +841,6 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
 
       {localWallet.status === "absent" && hostedConnected && !showLocalSetup && (
         <button className="wallet-popover-switch" type="button" onClick={() => setShowLocalSetup(true)}>Create a self-custody wallet</button>
-      )}
-
-      {!hostedConnected && localWallet.status !== "unlocked" && localWallet.status !== "loading" && (
-        <button className="wallet-popover-thru" type="button" onClick={() => void runAction("connect")} disabled={Boolean(action)}>{action === "connect" ? "Opening Thru Wallet..." : "Use Thru Wallet instead"}</button>
       )}
 
       {(error || localWallet.error) && <p className="wallet-popover-error" role="alert">{error ?? localWallet.error}</p>}
