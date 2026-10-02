@@ -112,6 +112,11 @@ faucet payouts still need an approved native-faucet provider.
 
 Cambrian currently exposes two signing paths:
 
+The wallet is intentionally presented as an in-context popover from the app
+wallet trigger, similar to an extension wallet. There is no separate wallet
+dashboard route; the current page stays visible while account actions are
+opened and closed.
+
 - **Local self-custody:** a Thru BIP39/HD account is created or restored in the
   browser. The encrypted vault is stored in IndexedDB using PBKDF2 + AES-GCM;
   the private key is held in memory only while the wallet is unlocked. The
