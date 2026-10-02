@@ -777,8 +777,8 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
 
       {address && (
         <div className="wallet-popover-balance">
-          <div><span>AVAILABLE BALANCE</span><strong>{balance ?? "—"}</strong></div>
-          <small><b>THRU</b><em>BETANET</em></small>
+          <div><span>PORTFOLIO BALANCE</span><strong>{balance ?? "—"}</strong><small className="wallet-popover-balance-unit">THRU</small></div>
+          <small className="wallet-popover-balance-network"><b>BETANET</b></small>
         </div>
       )}
 
@@ -841,6 +841,17 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
 
       {localWallet.status === "absent" && hostedConnected && !showLocalSetup && (
         <button className="wallet-popover-switch" type="button" onClick={() => setShowLocalSetup(true)}>Create a self-custody wallet</button>
+      )}
+
+      {address && (
+        <section className="wallet-assets" aria-label="Wallet assets">
+          <div className="wallet-assets-heading"><span>ASSETS</span><b>THRU BETANET</b></div>
+          <div className="wallet-asset-row">
+            <span className="wallet-token-icon"><img src={thruLogoAsset} width="40" height="40" alt="Thru" /></span>
+            <span className="wallet-asset-copy"><strong>THRU</strong><small>Thru Betanet token</small></span>
+            <span className="wallet-asset-amount"><strong>{balance ?? "—"}</strong><small>THRU</small></span>
+          </div>
+        </section>
       )}
 
       {(error || localWallet.error) && <p className="wallet-popover-error" role="alert">{error ?? localWallet.error}</p>}
