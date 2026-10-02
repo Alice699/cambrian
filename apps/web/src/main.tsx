@@ -11,6 +11,7 @@ import { createWalletConfig } from "@cambrian/wallet-core";
 import App from "./App";
 import { appConfig } from "./config";
 import "./styles.css";
+import "./wallet.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

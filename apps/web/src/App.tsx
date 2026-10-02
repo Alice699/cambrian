@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type FormEvent, type MouseEvent, type ReactNode, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import { useThru, useWallet } from "@thru/wallet/react";
 import {
   listAccountTransactions,
@@ -111,6 +112,7 @@ function WalletChip({ refreshKey = 0, onFaucet, faucetBusy = false }: WalletChip
   const [walletError, setWalletError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const controlRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     setWalletError(sdkError?.message ?? null);
@@ -120,7 +122,8 @@ function WalletChip({ refreshKey = 0, onFaucet, faucetBusy = false }: WalletChip
     if (!open) return;
 
     const handlePointerDown = (event: PointerEvent) => {
-      if (controlRef.current && !controlRef.current.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (!controlRef.current?.contains(target) && !popoverRef.current?.contains(target)) setOpen(false);
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setOpen(false);
@@ -189,7 +192,7 @@ function WalletChip({ refreshKey = 0, onFaucet, faucetBusy = false }: WalletChip
         </div>
         <span className="wallet-chip-status"><NetworkDot /></span>
       </button>
-      {open && <WalletPopover onClose={() => setOpen(false)} refreshKey={refreshKey} onFaucet={onFaucet} faucetBusy={faucetBusy} />}
+      {open && createPortal(<WalletPopover anchorElement={controlRef.current} popoverRef={popoverRef} onClose={() => setOpen(false)} refreshKey={refreshKey} onFaucet={onFaucet} faucetBusy={faucetBusy} />, document.body)}
     </div>
   );
 }
@@ -607,6 +610,8 @@ function DashboardPage() {
 type WalletPopoverAction = "connect" | "manage" | "disconnect" | "create" | "restore" | "unlock" | "switch" | "rename" | null;
 
 type WalletPopoverProps = {
+  anchorElement: HTMLElement | null;
+  popoverRef: RefObject<HTMLElement | null>;
   onClose: () => void;
   refreshKey?: number;
   onFaucet?: () => void;
@@ -626,7 +631,18 @@ function WalletOptionIcon({ kind }: { kind: "create" | "restore" | "thru" }) {
   );
 }
 
-function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }: WalletPopoverProps) {
+function WalletActionIcon({ kind }: { kind: "faucet" | "send" | "copy" | "manage" }) {
+  return (
+    <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+      {kind === "faucet" && <><path d="M12 3.5s5 5.7 5 10a5 5 0 0 1-10 0c0-4.3 5-10 5-10Z" /><path d="M9.5 14.2c.4 1.2 1.2 1.8 2.5 2" /></>}
+      {kind === "send" && <><path d="m4 11 15-7-7 15-1.4-6.1L4 11Z" /><path d="m10.6 12.9 3.7-3.7" /></>}
+      {kind === "copy" && <><rect x="8" y="8" width="11" height="11" rx="2" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" /></>}
+      {kind === "manage" && <><circle cx="9" cy="9" r="3" /><path d="M3.5 19c.5-3 2.4-4.7 5.5-4.7s5 1.7 5.5 4.7" /><path d="M16 8h5M18.5 5.5v5" /></>}
+    </svg>
+  );
+}
+
+function WalletPopover({ anchorElement, popoverRef, onClose, refreshKey = 0, onFaucet, faucetBusy = false }: WalletPopoverProps) {
   const localWallet = useLocalWallet();
   const { thru, error: sdkError } = useThru();
   const { connect, manageAccounts, disconnect, isConnected, isConnecting, selectedAccount } = useWallet();
@@ -641,6 +657,7 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [balance, setBalance] = useState<string | null>(null);
+  const [balanceStatus, setBalanceStatus] = useState<"loading" | "ready" | "unavailable">("loading");
   const [copied, setCopied] = useState(false);
   const [showLocalSetup, setShowLocalSetup] = useState(false);
   const [showWallets, setShowWallets] = useState(false);
@@ -649,6 +666,8 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
   const [showSend, setShowSend] = useState(false);
   const [sendRecipient, setSendRecipient] = useState("");
   const [sendAmount, setSendAmount] = useState("");
+  const [sendStep, setSendStep] = useState<"details" | "review">("details");
+  const [frame, setFrame] = useState({ top: 12, left: 12, width: 380, height: 600 });
 
   const localAddress = localWallet.status === "unlocked" ? localWallet.account?.address ?? null : null;
   const hostedConnected = Boolean(isConnected && selectedAccount);
@@ -657,6 +676,34 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
   const usingLocalWallet = Boolean(localAddress);
   const activeLocalWallet = localWallet.wallets.find((wallet) => wallet.id === localWallet.activeWalletId);
   const showSetup = showLocalSetup && (localWallet.status === "absent" || isAddingWallet);
+  const sendView = Boolean(showSend && address);
+  const portfolioView = Boolean(address && !showSetup && !sendView);
+
+  useLayoutEffect(() => {
+    const positionFrame = () => {
+      const margin = 12;
+      const viewport = window.visualViewport;
+      const viewportWidth = viewport?.width ?? window.innerWidth;
+      const viewportHeight = viewport?.height ?? window.innerHeight;
+      const offsetLeft = viewport?.offsetLeft ?? 0;
+      const offsetTop = viewport?.offsetTop ?? 0;
+      const width = Math.min(380, viewportWidth - margin * 2);
+      const height = Math.min(600, viewportHeight - margin * 2);
+      const anchor = anchorElement?.getBoundingClientRect();
+      const left = Math.max(offsetLeft + margin, Math.min((anchor?.right ?? viewportWidth) - width, offsetLeft + viewportWidth - width - margin));
+      const top = Math.max(offsetTop + margin, Math.min((anchor?.bottom ?? margin) + 10, offsetTop + viewportHeight - height - margin));
+      setFrame({ top, left, width, height });
+    };
+    positionFrame();
+    window.addEventListener("resize", positionFrame);
+    window.addEventListener("scroll", positionFrame, true);
+    window.visualViewport?.addEventListener("resize", positionFrame);
+    return () => {
+      window.removeEventListener("resize", positionFrame);
+      window.removeEventListener("scroll", positionFrame, true);
+      window.visualViewport?.removeEventListener("resize", positionFrame);
+    };
+  }, [anchorElement]);
 
   useEffect(() => {
     setError(sdkError?.message ?? null);
@@ -666,18 +713,26 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
     let active = true;
     if (!address || !thru) {
       setBalance(null);
+      setBalanceStatus("unavailable");
       return () => {
         active = false;
       };
     }
 
     setBalance(null);
+    setBalanceStatus("loading");
     readAccountSnapshot(thru, address)
       .then((account) => {
-        if (active) setBalance(account.balance?.toString() ?? "0");
+        if (active) {
+          setBalance(account.balance?.toString() ?? "0");
+          setBalanceStatus("ready");
+        }
       })
       .catch(() => {
-        if (active) setBalance(null);
+        if (active) {
+          setBalance(null);
+          setBalanceStatus("unavailable");
+        }
       });
 
     return () => {
@@ -751,6 +806,24 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
     setFeedback(null);
   };
 
+  const openSend = () => {
+    setShowWallets(false);
+    setSendStep("details");
+    setShowSend(true);
+    setError(null);
+    setFeedback(null);
+  };
+
+  const closeSend = () => {
+    if (sendStep === "review") {
+      setSendStep("details");
+      return;
+    }
+    setShowSend(false);
+    setError(null);
+    setFeedback(null);
+  };
+
   const switchLocalWallet = async (walletId: string) => {
     if (action) return;
     setAction("switch");
@@ -795,7 +868,13 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
       setError("Enter a recipient and amount first");
       return;
     }
-    setFeedback("Send is staged in the interface, but no transaction was created. Native THRU transfer wiring is still pending ABI verification.");
+    const parsedAmount = Number(sendAmount);
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      setError("Enter an amount greater than zero");
+      return;
+    }
+    setFeedback(null);
+    setSendStep("review");
   };
 
   const copy = async (value: string, successMessage: string) => {
@@ -833,44 +912,115 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
               : "Not connected";
 
   return (
-    <section className={`wallet-popover ${address ? "is-connected" : ""}`} role="dialog" aria-label="Cambrian wallet">
-      <header className="wallet-popover-head">
-        <div className="wallet-popover-brand">
-          <img src={markAsset} width="28" height="28" alt="" />
-          <span><strong>CAMBRIAN WALLET</strong><small>Thru Betanet</small></span>
-        </div>
+    <section ref={popoverRef} style={frame} className={`wallet-popover ${address ? "is-connected" : ""} ${sendView ? "is-send-view" : ""}`} role="dialog" aria-label="Cambrian wallet">
+      <header className={`wallet-popover-head ${sendView ? "is-subview" : ""}`}>
+        {sendView ? (
+          <>
+            <button className="wallet-popover-back-icon" type="button" onClick={closeSend} aria-label={sendStep === "review" ? "Back to transfer details" : "Back to wallet"}>
+              <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path d="m14.5 5-7 7 7 7" /></svg>
+            </button>
+            <div className="wallet-popover-view-title">
+              <strong>{sendStep === "review" ? "Review transfer" : "Send THRU"}</strong>
+              <small>Thru Betanet</small>
+            </div>
+          </>
+        ) : (
+          <div className="wallet-popover-brand">
+            <img src={markAsset} width="28" height="28" alt="" />
+            <span><strong>Cambrian</strong><small>Wallet</small></span>
+          </div>
+        )}
         <button className="wallet-popover-close" type="button" onClick={onClose} aria-label="Close wallet">&times;</button>
       </header>
 
-      <div className="wallet-popover-network">
-        <span><i /> Thru Betanet</span>
-        <b>{stateLabel}</b>
-      </div>
-
-      {address && !showSetup && (
-        <div className="wallet-popover-account">
-          <span className={`wallet-account-avatar ${usingLocalWallet ? "is-local" : "is-hosted"}`} aria-hidden="true"><i /><i /><i /></span>
-          <div className="wallet-popover-account-copy">
-            <span>{usingLocalWallet ? activeLocalWallet?.name ?? "LOCAL WALLET" : "THRU WALLET"}</span>
-            <strong>{shortenAddress(address)}</strong>
-            <button type="button" onClick={() => void copy(address, "Address copied.")} aria-label="Copy wallet address">{copied ? "Copied" : "Copy address"}</button>
-          </div>
-          <i className="wallet-popover-online" aria-label="Account available" />
+      {!sendView && (
+        <div className="wallet-popover-network">
+          <span><i /> Thru Betanet</span>
+          <b>{stateLabel}</b>
         </div>
       )}
 
-      {usingLocalWallet && !showSetup && (
-        <div className="wallet-local-manager">
-          <div className="wallet-local-toolbar">
-            <button className="wallet-account-switcher" type="button" onClick={() => setShowWallets((current) => !current)} aria-expanded={showWallets}>
-              <span><small>LOCAL ACCOUNTS</small><strong>{localWallet.wallets.length} {localWallet.wallets.length === 1 ? "wallet" : "wallets"}</strong></span>
-              <b>{showWallets ? "Close" : "Switch"}</b>
-            </button>
-            <button className="wallet-add-wallet" type="button" onClick={() => openLocalSetup("create", true)}>Add wallet</button>
-          </div>
-          {showWallets && (
+      <div className={`wallet-popover-body ${portfolioView ? "is-portfolio" : ""}`}>
+        {sendView && address ? (
+          <form className="wallet-send-screen" onSubmit={submitSend}>
+            <div className="wallet-send-content" key={sendStep}>
+              {sendStep === "details" ? (
+                <>
+                  <div className="wallet-send-from">
+                    <span>From</span>
+                    <strong>{usingLocalWallet ? activeLocalWallet?.name ?? "Local wallet" : "Thru Wallet"}</strong>
+                    <small>{shortenAddress(address)}</small>
+                  </div>
+
+                  <div className="wallet-send-token">
+                    <span className="wallet-token-icon"><img src={thruLogoAsset} width="40" height="40" alt="Thru" /></span>
+                    <span><strong>THRU</strong><small>Thru Betanet</small></span>
+                    <span><small>Available</small><strong title={balance ?? undefined}>{balance ?? "—"}</strong></span>
+                  </div>
+
+                  <label className="wallet-send-field">
+                    <span>Recipient address</span>
+                    <input value={sendRecipient} onChange={(event) => setSendRecipient(event.target.value)} placeholder="Enter a Thru address" autoComplete="off" autoCapitalize="none" spellCheck={false} autoFocus />
+                  </label>
+
+                  <div className="wallet-send-amount-card">
+                    <div><label htmlFor="wallet-send-amount">Amount</label><button type="button" onClick={() => balance && setSendAmount(balance)} disabled={!balance}>Max</button></div>
+                    <div className="wallet-send-amount-input"><input id="wallet-send-amount" type="text" value={sendAmount} onChange={(event) => setSendAmount(event.target.value)} placeholder="0.00" inputMode="decimal" autoComplete="off" /><strong>THRU</strong></div>
+                    <small>{balanceStatus === "loading" ? "Reading balance…" : balanceStatus === "unavailable" ? "Balance unavailable" : `Available ${balance} THRU`}</small>
+                  </div>
+                </>
+              ) : (
+                <div className="wallet-send-review">
+                  <span className="wallet-token-icon"><img src={thruLogoAsset} width="40" height="40" alt="Thru" /></span>
+                  <h2><span title={sendAmount.trim()}>{sendAmount.trim()}</span><small>THRU</small></h2>
+                  <p>Transfer preview</p>
+                  <dl>
+                    <div><dt>Amount</dt><dd>{sendAmount.trim()} THRU</dd></div>
+                    <div><dt>From</dt><dd>{usingLocalWallet ? activeLocalWallet?.name ?? "Local wallet" : "Thru Wallet"}</dd></div>
+                    <div><dt>To</dt><dd className="wallet-review-address">{sendRecipient.trim()}</dd></div>
+                    <div><dt>Network</dt><dd>Thru Betanet</dd></div>
+                  </dl>
+                </div>
+              )}
+
+              <p className="wallet-send-preview-note"><span>Preview only</span> THRU transfers are not available yet.</p>
+              {(error || localWallet.error) && <p className="wallet-send-message is-error" role="alert">{error ?? localWallet.error}</p>}
+            </div>
+
+            <div className="wallet-send-footer">
+              {sendStep === "details" ? (
+                <button key="review-transfer" className="wallet-popover-primary" type="submit" disabled={!sendRecipient.trim() || !sendAmount.trim()}>Review transfer</button>
+              ) : (
+                <button key="edit-details" className="wallet-popover-primary" type="button" onClick={() => setSendStep("details")}>Edit details</button>
+              )}
+              <small>No funds will be sent in preview.</small>
+            </div>
+          </form>
+        ) : (
+          <>
+
+      {address && !showSetup && (
+        <div className={`wallet-account-shell ${showWallets ? "is-open" : ""}`}>
+          <button
+            className="wallet-popover-account wallet-account-trigger"
+            type="button"
+            onClick={() => usingLocalWallet ? setShowWallets((current) => !current) : void runAction("manage")}
+            aria-expanded={usingLocalWallet ? showWallets : undefined}
+            disabled={Boolean(action)}
+          >
+            <span className={`wallet-account-avatar ${usingLocalWallet ? "is-local" : "is-hosted"}`} aria-hidden="true"><i /><i /><i /></span>
+            <span className="wallet-popover-account-copy">
+              <span>{usingLocalWallet ? activeLocalWallet?.name ?? "LOCAL WALLET" : "THRU WALLET"}</span>
+              <strong>{shortenAddress(address)}</strong>
+            </span>
+            <span className="wallet-account-control" aria-hidden="true">
+              {usingLocalWallet && <svg viewBox="0 0 24 24"><path d="m7 9 5 5 5-5" /></svg>}
+            </span>
+          </button>
+
+          {usingLocalWallet && showWallets && (
             <div className="wallet-account-menu">
-              <div className="wallet-account-menu-head"><span>YOUR WALLETS</span><small>Keys stay on this device</small></div>
+              <div className="wallet-account-menu-head"><span>YOUR ACCOUNTS</span><small>Encrypted on this device</small></div>
               {localWallet.wallets.map((wallet) => (
                 <div className={`wallet-account-option ${wallet.id === localWallet.activeWalletId ? "is-active" : ""}`} key={wallet.id}>
                   <button type="button" onClick={() => void switchLocalWallet(wallet.id)} disabled={Boolean(action)}>
@@ -888,6 +1038,9 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
                   )}
                 </div>
               ))}
+              <button className="wallet-account-add-inline" type="button" onClick={() => openLocalSetup("create", true)}>
+                <span aria-hidden="true">+</span><strong>Add another wallet</strong>
+              </button>
             </div>
           )}
         </div>
@@ -895,8 +1048,9 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
 
       {address && !showSetup && (
         <div className="wallet-popover-balance">
-          <div><span>PORTFOLIO BALANCE</span><strong>{balance ?? "—"}</strong><small className="wallet-popover-balance-unit">THRU</small></div>
-          <small className="wallet-popover-balance-network"><b>BETANET</b></small>
+          <span>Total balance</span>
+          <div className="wallet-balance-amount"><strong title={balance ?? undefined}>{balance ?? "—"}</strong><small>THRU</small></div>
+          <small className="wallet-popover-balance-network">{balanceStatus === "loading" ? "Reading balance…" : balanceStatus === "unavailable" ? "Balance unavailable" : "Thru Betanet"}</small>
         </div>
       )}
 
@@ -911,11 +1065,10 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
       )}
 
       {localWallet.status === "unlocked" && localAddress && !showSetup ? (
-        <div className="wallet-popover-actions wallet-popover-connected-actions">
-          {onFaucet && <button className="wallet-popover-primary" type="button" onClick={onFaucet} disabled={faucetBusy}>{faucetBusy ? "Requesting..." : "Get faucet"}</button>}
-          <button className="wallet-popover-secondary" type="button" onClick={() => { setShowSend(true); setFeedback(null); setError(null); }} disabled={Boolean(action)}>Send</button>
-          <button className="wallet-popover-secondary" type="button" onClick={() => void copy(localAddress, "Address copied.")} disabled={Boolean(action)}>{copied ? "Address copied" : "Copy address"}</button>
-          <button className="wallet-popover-link" type="button" onClick={() => { localWalletController.lock(); setRecoveryPhrase(null); setFeedback("Local wallet locked."); }} disabled={Boolean(action)}>Lock wallet</button>
+        <div className={`wallet-quick-actions ${onFaucet ? "" : "has-two"}`}>
+          <button type="button" onClick={openSend} disabled={Boolean(action)}><span><WalletActionIcon kind="send" /></span><strong>Send</strong></button>
+          <button type="button" onClick={() => void copy(localAddress, "Address copied.")} disabled={Boolean(action)}><span><WalletActionIcon kind="copy" /></span><strong>{copied ? "Copied" : "Copy"}</strong></button>
+          {onFaucet && <button type="button" onClick={onFaucet} disabled={faucetBusy}><span><WalletActionIcon kind="faucet" /></span><strong>{faucetBusy ? "Loading" : "Faucet"}</strong></button>}
         </div>
       ) : localWallet.status === "locked" ? (
         <form className="wallet-popover-form wallet-popover-unlock" onSubmit={submit}>
@@ -951,12 +1104,11 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
         </div>
       ) : null}
 
-      {hostedConnected && !localAddress && (
-        <div className="wallet-popover-actions wallet-popover-hosted-actions">
-          <button className="wallet-popover-primary" type="button" onClick={() => void runAction("manage")} disabled={Boolean(action)}>{action === "manage" ? "Loading..." : "Manage account"}</button>
-          <button className="wallet-popover-secondary" type="button" onClick={() => { setShowSend(true); setFeedback(null); setError(null); }} disabled={Boolean(action)}>Send</button>
-          {hostedAddress && <button className="wallet-popover-secondary" type="button" onClick={() => void copy(hostedAddress, "Address copied.")} disabled={Boolean(action)}>{copied ? "Address copied" : "Copy address"}</button>}
-          <button className="wallet-popover-link" type="button" onClick={() => void runAction("disconnect")} disabled={Boolean(action)}>Disconnect</button>
+      {hostedConnected && !localAddress && !showSetup && (
+        <div className="wallet-quick-actions">
+          <button type="button" onClick={openSend} disabled={Boolean(action)}><span><WalletActionIcon kind="send" /></span><strong>Send</strong></button>
+          {hostedAddress && <button type="button" onClick={() => void copy(hostedAddress, "Address copied.")} disabled={Boolean(action)}><span><WalletActionIcon kind="copy" /></span><strong>{copied ? "Copied" : "Copy"}</strong></button>}
+          <button type="button" onClick={() => void runAction("manage")} disabled={Boolean(action)}><span><WalletActionIcon kind="manage" /></span><strong>{action === "manage" ? "Loading" : "Accounts"}</strong></button>
         </div>
       )}
 
@@ -964,30 +1116,33 @@ function WalletPopover({ onClose, refreshKey = 0, onFaucet, faucetBusy = false }
         <button className="wallet-popover-switch" type="button" onClick={() => setShowLocalSetup(true)}>Create a self-custody wallet</button>
       )}
 
-      {address && (
+      {address && !showSetup && (
         <section className="wallet-assets" aria-label="Wallet assets">
-          <div className="wallet-assets-heading"><span>ASSETS</span><b>THRU BETANET</b></div>
+          <div className="wallet-assets-heading"><span>Tokens</span><b>1 asset</b></div>
           <div className="wallet-asset-row">
             <span className="wallet-token-icon"><img src={thruLogoAsset} width="40" height="40" alt="Thru" /></span>
-            <span className="wallet-asset-copy"><strong>THRU</strong><small>Thru Betanet token</small></span>
-            <span className="wallet-asset-amount"><strong>{balance ?? "—"}</strong><small>THRU</small></span>
+            <span className="wallet-asset-copy"><strong>THRU</strong><small>Thru Betanet</small></span>
+            <span className="wallet-asset-amount"><strong title={balance ?? undefined}>{balance ?? "—"}</strong><small>THRU</small></span>
           </div>
         </section>
       )}
 
-      {showSend && address && (
-        <form className="wallet-send-panel" onSubmit={submitSend}>
-          <div className="wallet-send-heading"><div><span>SEND THRU</span><h3>Move native THRU.</h3></div><button type="button" onClick={() => setShowSend(false)}>Close</button></div>
-          <p className="wallet-send-copy">Review the recipient and amount here before signing. The native transfer instruction is not connected yet, so submitting this form will never move funds.</p>
-          <label>Recipient address<input value={sendRecipient} onChange={(event) => setSendRecipient(event.target.value)} placeholder="ta..." autoComplete="off" /></label>
-          <label>Amount<input type="number" min="0" step="any" value={sendAmount} onChange={(event) => setSendAmount(event.target.value)} placeholder="0.00" inputMode="decimal" /></label>
-          <button className="wallet-popover-primary" type="submit">Review send</button>
-        </form>
+            {(error || localWallet.error) && <p className="wallet-popover-error" role="alert">{error ?? localWallet.error}</p>}
+            {feedback && <p className="wallet-popover-feedback" role="status">{feedback}</p>}
+            {!portfolioView && <p className="wallet-popover-note">Your keys stay encrypted on this device.</p>}
+          </>
+        )}
+      </div>
+      {portfolioView && (
+        <footer className="wallet-popover-footer">
+          <span>{usingLocalWallet ? "Encrypted on this device" : "Connected to Thru Wallet"}</span>
+          {usingLocalWallet ? (
+            <button className="wallet-session-action" type="button" onClick={() => { localWalletController.lock(); setRecoveryPhrase(null); setFeedback("Local wallet locked."); }} disabled={Boolean(action)}>Lock wallet</button>
+          ) : (
+            <button className="wallet-session-action" type="button" onClick={() => void runAction("disconnect")} disabled={Boolean(action)}>Disconnect</button>
+          )}
+        </footer>
       )}
-
-      {(error || localWallet.error) && <p className="wallet-popover-error" role="alert">{error ?? localWallet.error}</p>}
-      {feedback && <p className="wallet-popover-feedback" role="status">{feedback}</p>}
-      <p className="wallet-popover-note">Cambrian only builds the intent. Your selected wallet approves the transaction.</p>
     </section>
   );
 }

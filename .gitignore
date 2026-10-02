@@ -18,3 +18,6 @@
 
 # Temporary clean checkout used for Thru Betanet deployment verification.
 /tmp/thru-program-deploy/
+
+# Isolated wallet rendering checks and screenshots.
+/tmp/wallet-ui-qa/
