@@ -3,8 +3,11 @@ import test from "node:test";
 import {
   FaucetError,
   FaucetService,
+  CliFaucetProvider,
   UnavailableFaucetProvider,
   createFaucetPolicyFromEnv,
+  createFaucetProviderFromEnv,
+  normalizeThruAddress,
   type FaucetPayoutProvider,
 } from "../apps/api/src/faucet.ts";
 
@@ -26,6 +29,23 @@ test("faucet policy stays disabled until an amount is configured", () => {
   const policy = createFaucetPolicyFromEnv({});
   assert.equal(policy.amount, 0n);
   assert.equal(policy.maxRequestsPerWindow, 3);
+});
+
+test("faucet can be wired to the local Thru CLI explicitly", () => {
+  const provider = createFaucetProviderFromEnv({
+    FAUCET_CLI_ENABLED: "true",
+    FAUCET_CLI_PATH: "thru.cmd",
+    FAUCET_CLI_RPC_URL: "https://rpc.betanet.thru.org",
+    FAUCET_CLI_FEE_PAYER: "default",
+  });
+
+  assert.equal(provider.configured, true);
+  assert.equal(provider instanceof CliFaucetProvider, true);
+});
+
+test("faucet accepts the full Thru address alphabet", () => {
+  const address = "taVQ0UdXh8EhJBw2blXvgVOITohZrLiOc_QB0T_ct0kY7E";
+  assert.equal(normalizeThruAddress(address), address);
 });
 
 test("faucet claim is idempotent and does not pay twice", async () => {
@@ -82,10 +102,10 @@ test("faucet enforces address cooldown and IP rate limit", async () => {
   );
 
   now += 11_000;
-  await service.claim({ address: address.replace("ta", "tb"), ip: "10.0.0.1" });
+  await service.claim({ address: address.slice(0, -1) + "c", ip: "10.0.0.1" });
   now += 11_000;
   await assert.rejects(
-    () => service.claim({ address: address.replace("ta", "tc"), ip: "10.0.0.1" }),
+    () => service.claim({ address: address.slice(0, -1) + "d", ip: "10.0.0.1" }),
     (error: unknown) => error instanceof FaucetError && error.code === "rate-limited",
   );
 });

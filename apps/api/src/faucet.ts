@@ -1,3 +1,5 @@
+import { execFile } from "node:child_process";
+
 export type FaucetPayoutStatus = "submitted" | "confirmed";
 
 export interface FaucetPolicy {
@@ -60,7 +62,7 @@ export class FaucetError extends Error {
   }
 }
 
-const THRU_ADDRESS_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{20,128}$/;
+const THRU_ADDRESS_PATTERN = /^ta[A-Za-z0-9_-]{20,128}$/;
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{8,128}$/;
 
 export function normalizeThruAddress(value: unknown): string {
@@ -416,9 +418,198 @@ export class HttpFaucetProvider implements FaucetPayoutProvider {
   }
 }
 
+interface CliFaucetProviderOptions {
+  command: string;
+  rpcUrl: string;
+  feePayer: string;
+  timeoutMs?: number;
+}
+
+interface CliExecutionResult {
+  error: unknown;
+  stdout: string;
+  stderr: string;
+}
+
+type JsonRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is JsonRecord {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function findStringField(
+  value: unknown,
+  keys: readonly string[],
+  depth = 0,
+): string | undefined {
+  if (depth > 4 || !isRecord(value)) return undefined;
+
+  for (const key of keys) {
+    const candidate = value[key];
+    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+  }
+
+  for (const child of Object.values(value)) {
+    const result = findStringField(child, keys, depth + 1);
+    if (result) return result;
+  }
+
+  return undefined;
+}
+
+function parseCliJson(stdout: string): unknown {
+  const trimmed = stdout.trim();
+  if (!trimmed) return undefined;
+
+  try {
+    return JSON.parse(trimmed) as unknown;
+  } catch {
+    const firstBrace = trimmed.indexOf("{");
+    const lastBrace = trimmed.lastIndexOf("}");
+    if (firstBrace < 0 || lastBrace <= firstBrace) return undefined;
+    try {
+      return JSON.parse(trimmed.slice(firstBrace, lastBrace + 1)) as unknown;
+    } catch {
+      return undefined;
+    }
+  }
+}
+
+function providerErrorMessage(body: unknown, fallback: string): string {
+  const message = findStringField(body, ["message", "detail", "reason", "error"]);
+  const normalized = (message ?? fallback).replace(/\s+/g, " ").trim();
+  return normalized.slice(0, 240) || "The Thru faucet CLI could not process the claim.";
+}
+
+function extractCliPayout(body: unknown): FaucetPayout {
+  if (isRecord(body) && body.error !== undefined) {
+    throw new FaucetError(
+      "provider-error",
+      providerErrorMessage(body.error, "The Thru faucet CLI returned an error."),
+      503,
+    );
+  }
+
+  const rawStatus = findStringField(body, ["status", "state"])?.toLowerCase();
+  const status: FaucetPayoutStatus =
+    rawStatus === "confirmed" || rawStatus === "finalized"
+      ? "confirmed"
+      : "submitted";
+  const signature = findStringField(body, [
+    "signature",
+    "txSignature",
+    "transactionSignature",
+    "txHash",
+    "transactionHash",
+  ]);
+
+  return {
+    status,
+    ...(signature ? { signature } : {}),
+  };
+}
+
+function execFileAsync(
+  command: string,
+  args: string[],
+  timeoutMs: number,
+): Promise<CliExecutionResult> {
+  return new Promise((resolve) => {
+    execFile(
+      command,
+      args,
+      {
+        timeout: timeoutMs,
+        maxBuffer: 1024 * 1024,
+        shell: process.platform === "win32",
+        windowsHide: true,
+      },
+      (error, stdout, stderr) => {
+        resolve({
+          error,
+          stdout: typeof stdout === "string" ? stdout : "",
+          stderr: typeof stderr === "string" ? stderr : "",
+        });
+      },
+    );
+  });
+}
+
+function validateCliRpcUrl(value: string): string {
+  const parsed = new URL(value);
+  if (
+    parsed.protocol !== "https:" &&
+    parsed.hostname !== "localhost" &&
+    parsed.hostname !== "127.0.0.1"
+  ) {
+    throw new Error("FAUCET_CLI_RPC_URL must use HTTPS outside local development");
+  }
+  return value;
+}
+
+const CLI_ACCOUNT_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
+
+export class CliFaucetProvider implements FaucetPayoutProvider {
+  readonly configured = true;
+  private readonly command: string;
+  private readonly rpcUrl: string;
+  private readonly feePayer: string;
+  private readonly timeoutMs: number;
+
+  constructor(options: CliFaucetProviderOptions) {
+    if (!options.command.trim()) throw new Error("FAUCET_CLI_PATH must not be empty");
+    if (!CLI_ACCOUNT_PATTERN.test(options.feePayer)) {
+      throw new Error("FAUCET_CLI_FEE_PAYER contains unsupported characters");
+    }
+
+    this.command = options.command.trim();
+    this.rpcUrl = validateCliRpcUrl(options.rpcUrl.trim());
+    this.feePayer = options.feePayer;
+    this.timeoutMs = options.timeoutMs ?? 15_000;
+  }
+
+  async requestPayout(request: FaucetPayoutRequest): Promise<FaucetPayout> {
+    const args = [
+      "--json",
+      "--quiet",
+      "faucet",
+      "withdraw",
+      request.address,
+      request.amount.toString(),
+      "--fee-payer",
+      this.feePayer,
+      "--url",
+      this.rpcUrl,
+    ];
+    const result = await execFileAsync(this.command, args, this.timeoutMs);
+    const body = parseCliJson(result.stdout);
+
+    if (result.error) {
+      const fallback = result.stderr || "The Thru faucet CLI could not process the claim.";
+      throw new FaucetError("provider-error", providerErrorMessage(body, fallback), 503);
+    }
+
+    return extractCliPayout(body);
+  }
+}
+
 export function createFaucetProviderFromEnv(
   env: Record<string, string | undefined>,
 ): FaucetPayoutProvider {
+  const cliEnabled = env.FAUCET_CLI_ENABLED?.trim().toLowerCase() === "true";
+  if (cliEnabled) {
+    return new CliFaucetProvider({
+      command: env.FAUCET_CLI_PATH?.trim() || (process.platform === "win32" ? "thru.cmd" : "thru"),
+      rpcUrl: validateCliRpcUrl(env.FAUCET_CLI_RPC_URL?.trim() || "https://rpc.betanet.thru.org"),
+      feePayer: env.FAUCET_CLI_FEE_PAYER?.trim() || "default",
+      timeoutMs: parseDuration(
+        env,
+        "FAUCET_CLI_TIMEOUT_MS",
+        parseDuration(env, "FAUCET_PROVIDER_TIMEOUT_MS", 15_000),
+      ),
+    });
+  }
+
   const url = env.FAUCET_PROVIDER_URL?.trim();
   if (!url) return new UnavailableFaucetProvider();
   return new HttpFaucetProvider({

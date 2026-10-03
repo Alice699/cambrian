@@ -11,6 +11,7 @@ import {
 import { CAMBRIAN_INSTRUCTION_ABI_NAME } from "../packages/cambrian-sdk/src/constants.ts";
 import { defaultCambrianConfig } from "../packages/config/src/index.ts";
 import { assertBirthDeployment } from "../packages/cambrian-sdk/src/deployment.ts";
+import { prepareNativeTransferReview } from "../packages/cambrian-sdk/src/transfer.ts";
 
 test("encodes birth instruction with the documented little-endian layout", () => {
   const seed = new Uint8Array(32).fill(0x11);
@@ -109,4 +110,31 @@ test("ships the verified Betanet deployment and qualified review ABI name", () =
   assert.equal(defaultCambrianConfig.programId, "taLnTXq4qblEsC-HkN4QG35Lp72Vnle8gk8UkiAtASymFD");
   assert.equal(defaultCambrianConfig.abiId, "taPciIseW9AzTnNaB6VJyhHkiOwEDfZYwUbdPdfvbvUQuS");
   assert.equal(CAMBRIAN_INSTRUCTION_ABI_NAME, "cambrian.lifeform.CambrianInstruction");
+});
+
+test("prepares native transfer review data without losing integer precision", () => {
+  const review = prepareNativeTransferReview({
+    recipient: defaultCambrianConfig.programId,
+    amount: "9007199254740993",
+    balance: 9007199254740994n,
+  });
+
+  assert.equal(review.amount, 9007199254740993n);
+  assert.equal(review.amountText, "9007199254740993");
+  assert.equal(review.recipient, defaultCambrianConfig.programId);
+});
+
+test("rejects unsafe native transfer review input", () => {
+  assert.throws(
+    () => prepareNativeTransferReview({ recipient: "not-an-address", amount: "1", balance: 1n }),
+    /valid Thru address/,
+  );
+  assert.throws(
+    () => prepareNativeTransferReview({ recipient: defaultCambrianConfig.programId, amount: "1.5", balance: 2n }),
+    /whole number/,
+  );
+  assert.throws(
+    () => prepareNativeTransferReview({ recipient: defaultCambrianConfig.programId, amount: "3", balance: 2n }),
+    /available balance/,
+  );
 });

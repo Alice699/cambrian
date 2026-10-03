@@ -6,6 +6,7 @@ import {
   listCambrianOrganisms,
   readAccountSnapshot,
   executeBirthTransaction,
+  prepareNativeTransferReview,
   type CambrianOrganismRecord,
   type CambrianTransactionSummary,
   type BirthTransactionStage,
@@ -864,17 +865,24 @@ function WalletPopover({ anchorElement, popoverRef, onClose, refreshKey = 0, onF
   const submitSend = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
-    if (!sendRecipient.trim() || !sendAmount.trim()) {
-      setError("Enter a recipient and amount first");
+    if (balanceStatus !== "ready" || balance === null) {
+      setError("Wait for the available balance before reviewing this transfer");
       return;
     }
-    const parsedAmount = Number(sendAmount);
-    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-      setError("Enter an amount greater than zero");
+    try {
+      const review = prepareNativeTransferReview({
+        recipient: sendRecipient,
+        amount: sendAmount,
+        balance: BigInt(balance),
+      });
+      setSendRecipient(review.recipient);
+      setSendAmount(review.amountText);
+      setFeedback(null);
+      setSendStep("review");
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Could not review this transfer");
       return;
     }
-    setFeedback(null);
-    setSendStep("review");
   };
 
   const copy = async (value: string, successMessage: string) => {
@@ -965,7 +973,7 @@ function WalletPopover({ anchorElement, popoverRef, onClose, refreshKey = 0, onF
 
                   <div className="wallet-send-amount-card">
                     <div><label htmlFor="wallet-send-amount">Amount</label><button type="button" onClick={() => balance && setSendAmount(balance)} disabled={!balance}>Max</button></div>
-                    <div className="wallet-send-amount-input"><input id="wallet-send-amount" type="text" value={sendAmount} onChange={(event) => setSendAmount(event.target.value)} placeholder="0.00" inputMode="decimal" autoComplete="off" /><strong>THRU</strong></div>
+                    <div className="wallet-send-amount-input"><input id="wallet-send-amount" type="text" value={sendAmount} onChange={(event) => setSendAmount(event.target.value)} placeholder="0" inputMode="numeric" autoComplete="off" /><strong>THRU</strong></div>
                     <small>{balanceStatus === "loading" ? "Reading balance…" : balanceStatus === "unavailable" ? "Balance unavailable" : `Available ${balance} THRU`}</small>
                   </div>
                 </>
@@ -989,7 +997,7 @@ function WalletPopover({ anchorElement, popoverRef, onClose, refreshKey = 0, onF
 
             <div className="wallet-send-footer">
               {sendStep === "details" ? (
-                <button key="review-transfer" className="wallet-popover-primary" type="submit" disabled={!sendRecipient.trim() || !sendAmount.trim()}>Review transfer</button>
+                <button key="review-transfer" className="wallet-popover-primary" type="submit" disabled={balanceStatus !== "ready" || !sendRecipient.trim() || !sendAmount.trim()}>Review transfer</button>
               ) : (
                 <button key="edit-details" className="wallet-popover-primary" type="button" onClick={() => setSendStep("details")}>Edit details</button>
               )}

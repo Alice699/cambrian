@@ -69,14 +69,18 @@ Important frontend variables:
 Important API-only variables:
 
 - FAUCET_AMOUNT_UNITS
-- FAUCET_PROVIDER_URL
-- FAUCET_PROVIDER_TOKEN
+- FAUCET_PROVIDER_URL or FAUCET_CLI_ENABLED
+- FAUCET_PROVIDER_TOKEN (HTTP provider only)
+- FAUCET_CLI_PATH
+- FAUCET_CLI_RPC_URL
+- FAUCET_CLI_FEE_PAYER
 - FAUCET_COOLDOWN_MS
 - FAUCET_RATE_WINDOW_MS
 - FAUCET_RATE_MAX
 
 Never expose faucet credentials or signing material through VITE-prefixed
-variables.
+variables. For local CLI payouts, keep the Thru CLI profile on the server
+machine and never put its keys in `.env` or browser code.
 
 ## Commands
 
