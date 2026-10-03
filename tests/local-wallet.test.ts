@@ -50,6 +50,52 @@ test("restores the same account from its recovery phrase and signs messages", as
   assert.equal(valid, true);
 });
 
+test("provisions a missing local account before requesting funds", async () => {
+  const keyPair = await keys.generateKeyPair();
+  const account = {
+    address: keyPair.address,
+    publicKey: Pubkey.from(keyPair.publicKey).toThruFmt(),
+    path: "m/44'/9999'/0'/0'",
+    index: 0,
+  };
+  let exists = false;
+  let createCalls = 0;
+  let sendCalls = 0;
+  const transaction = {
+    async sign(privateKey: Uint8Array) {
+      assert.deepEqual(privateKey, keyPair.privateKey);
+    },
+  };
+  const fakeClient = {
+    accounts: {
+      async get() {
+        if (exists) return {};
+        const error = new Error("[not_found] account not found") as Error & { code?: number };
+        error.code = 5;
+        throw error;
+      },
+      async create() {
+        createCalls += 1;
+        return transaction;
+      },
+    },
+    transactions: {
+      async send() {
+        sendCalls += 1;
+        exists = true;
+        return "sig-account-create";
+      },
+    },
+  } as unknown as Thru;
+
+  const session = new LocalWalletSession(account, fakeClient, keyPair.privateKey);
+  assert.deepEqual(await session.ensureAccount(), { created: true, signature: "sig-account-create" });
+  assert.deepEqual(await session.ensureAccount(), { created: false });
+  assert.equal(createCalls, 1);
+  assert.equal(sendCalls, 1);
+  session.lock();
+});
+
 test("keeps named local wallets switchable inside one encrypted vault", async () => {
   const storage = new MemoryLocalWalletStorage();
   const controller = new LocalWalletController({ rpcUrl: "https://rpc.betanet.thru.org", storage });

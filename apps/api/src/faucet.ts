@@ -481,6 +481,12 @@ function providerErrorMessage(body: unknown, fallback: string): string {
   return normalized.slice(0, 240) || "The Thru faucet CLI could not process the claim.";
 }
 
+function executionErrorMessage(error: unknown): string | undefined {
+  if (!isRecord(error)) return undefined;
+  const message = error.message;
+  return typeof message === "string" && message.trim() ? message.trim() : undefined;
+}
+
 function extractCliPayout(body: unknown): FaucetPayout {
   if (isRecord(body) && body.error !== undefined) {
     throw new FaucetError(
@@ -581,11 +587,23 @@ export class CliFaucetProvider implements FaucetPayoutProvider {
       "--url",
       this.rpcUrl,
     ];
-    const result = await execFileAsync(this.command, args, this.timeoutMs);
+    let result: CliExecutionResult;
+    try {
+      result = await execFileAsync(this.command, args, this.timeoutMs);
+    } catch (error) {
+      throw new FaucetError(
+        "provider-error",
+        providerErrorMessage(error, "The Thru faucet CLI could not be started."),
+        503,
+      );
+    }
     const body = parseCliJson(result.stdout);
 
     if (result.error) {
-      const fallback = result.stderr || "The Thru faucet CLI could not process the claim.";
+      const fallback =
+        result.stderr ||
+        executionErrorMessage(result.error) ||
+        "The Thru faucet CLI could not process the claim.";
       throw new FaucetError("provider-error", providerErrorMessage(body, fallback), 503);
     }
 

@@ -547,6 +547,12 @@ function DashboardPage() {
     setNotice(null);
     setNoticeDetail(null);
     try {
+      if (localSigner) {
+        setNotice("faucet");
+        setNoticeDetail("Preparing your on-chain account before requesting faucet funds...");
+        await localSigner.ensureAccount();
+      }
+
       const receipt = await claimFaucet(activeAddress);
       setBalanceRefreshKey((current) => current + 1);
       if (receipt.status === "confirmed") {

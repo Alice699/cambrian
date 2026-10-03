@@ -91,9 +91,15 @@ export interface LocalWalletCreationResult {
   recoveryPhrase: string;
 }
 
+export interface LocalAccountProvisionResult {
+  created: boolean;
+  signature?: string;
+}
+
 export interface LocalWalletSigner {
   readonly connected: boolean;
   readonly account: LocalWalletAccount;
+  ensureAccount(): Promise<LocalAccountProvisionResult>;
   signTransaction(intent: ThruTransactionIntent): Promise<string>;
   signMessage(message: Uint8Array): Promise<string>;
   lock(): void;
@@ -190,6 +196,26 @@ export class LocalWalletSession implements LocalWalletSigner {
 
   get connected(): boolean {
     return this.privateKey !== null;
+  }
+
+  async ensureAccount(): Promise<LocalAccountProvisionResult> {
+    const privateKey = this.requirePrivateKey();
+
+    try {
+      await this.client.accounts.get(this.account.address);
+      return { created: false };
+    } catch (error) {
+      if (!isMissingAccountError(error)) throw error;
+    }
+
+    const transaction = await this.client.accounts.create({
+      publicKey: this.account.address,
+    });
+    await transaction.sign(privateKey);
+    const signature = await this.client.transactions.send(transaction);
+    await waitForAccount(this.client, this.account.address);
+
+    return { created: true, signature };
   }
 
   async signTransaction(intent: ThruTransactionIntent): Promise<string> {
@@ -457,6 +483,33 @@ export class LocalWalletController {
 
 function assertPassword(password: string): void {
   if (password.length < PASSWORD_MIN_LENGTH) throw new Error(`Wallet password must be at least ${PASSWORD_MIN_LENGTH} characters`);
+}
+
+function isMissingAccountError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as { code?: unknown; message?: unknown };
+  if (candidate.code === 5 || candidate.code === "not_found") return true;
+  return typeof candidate.message === "string" && /account not found/i.test(candidate.message);
+}
+
+async function waitForAccount(client: Thru, address: string): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    try {
+      await client.accounts.get(address);
+      return;
+    } catch (error) {
+      if (!isMissingAccountError(error)) throw error;
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+
+  throw new Error(
+    lastError instanceof Error
+      ? "The account was submitted but is not visible on Betanet yet. Try again in a moment."
+      : "The account was submitted but could not be verified on Betanet.",
+  );
 }
 
 function normalizeWalletName(name: string, fallback: string): string {
