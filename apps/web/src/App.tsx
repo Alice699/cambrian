@@ -33,7 +33,75 @@ function useLocalWallet() {
 }
 
 type Notice = "faucet" | "faucet-submitted" | "faucet-success" | "faucet-error" | "birth" | "birth-submitted" | "birth-success" | "birth-error" | null;
+type FaucetStage = "idle" | "preparing" | "requesting" | "confirming";
 type Route = "landing" | "dashboard" | "organisms" | "activity" | "learn";
+
+const FAUCET_BALANCE_POLL_INTERVAL_MS = 1_000;
+const FAUCET_BALANCE_POLL_TIMEOUT_MS = 30_000;
+const FAUCET_ERROR_RECONCILE_TIMEOUT_MS = 15_000;
+
+function parseFaucetAmount(value: string): bigint | null {
+  try {
+    const amount = BigInt(value);
+    return amount > 0n ? amount : null;
+  } catch {
+    return null;
+  }
+}
+
+async function waitForFaucetBalance(
+  client: Parameters<typeof readAccountSnapshot>[0],
+  address: string,
+  baselineBalance: bigint | null,
+  amount: bigint,
+): Promise<bigint | null> {
+  const targetBalance = baselineBalance === null ? null : baselineBalance + amount;
+  const deadline = Date.now() + FAUCET_BALANCE_POLL_TIMEOUT_MS;
+
+  while (Date.now() < deadline) {
+    try {
+      const account = await readAccountSnapshot(client, address);
+      if (account.balance !== null) {
+        const reachedTarget = targetBalance === null
+          ? account.balance > 0n
+          : account.balance >= targetBalance;
+        if (reachedTarget) return account.balance;
+      }
+    } catch {
+      // The provider may confirm before the account index catches up. Keep polling.
+    }
+
+    await new Promise<void>((resolve) => setTimeout(resolve, FAUCET_BALANCE_POLL_INTERVAL_MS));
+  }
+
+  return null;
+}
+
+async function waitForBalanceIncrease(
+  client: Parameters<typeof readAccountSnapshot>[0],
+  address: string,
+  baselineBalance: bigint | null,
+): Promise<bigint | null> {
+  const deadline = Date.now() + FAUCET_ERROR_RECONCILE_TIMEOUT_MS;
+
+  while (Date.now() < deadline) {
+    try {
+      const account = await readAccountSnapshot(client, address);
+      if (account.balance !== null) {
+        const changed = baselineBalance === null
+          ? account.balance > 0n
+          : account.balance > baselineBalance;
+        if (changed) return account.balance;
+      }
+    } catch {
+      // A delayed provider response can land before the balance index is ready.
+    }
+
+    await new Promise<void>((resolve) => setTimeout(resolve, FAUCET_BALANCE_POLL_INTERVAL_MS));
+  }
+
+  return null;
+}
 
 function routeFromLocation(): Route {
   const path = window.location.pathname;
@@ -458,6 +526,7 @@ function DashboardFooter() {
 }
 
 function noticeCopy(notice: Notice, detail?: string | null) {
+  if (notice === "faucet") return detail ?? "Preparing your Betanet account...";
   if (notice === "faucet-submitted") return detail ?? "Faucet request submitted. Waiting for the Betanet balance to update.";
   if (notice === "faucet-success") return detail ?? "Faucet funds confirmed by the Betanet provider.";
   if (notice === "faucet-error") return detail ?? "Faucet request could not be completed.";
@@ -465,7 +534,7 @@ function noticeCopy(notice: Notice, detail?: string | null) {
   if (notice === "birth-submitted") return "Birth was submitted. Waiting for the Betanet execution result.";
   if (notice === "birth-success") return "Birth transaction confirmed by the Betanet RPC.";
   if (notice === "birth-error") return "Birth could not be completed. Check the wallet approval and Betanet state.";
-  return "Native faucet endpoint is not configured yet.";
+  return detail ?? "Working on your request...";
 }
 
 function DashboardFrame({ activeRoute, children, notice, noticeDetail, onDismiss }: { activeRoute: Exclude<Route, "landing">; children: ReactNode; notice?: Notice; noticeDetail?: string | null; onDismiss?: () => void }) {
@@ -490,7 +559,7 @@ function DashboardPage() {
   const [notice, setNotice] = useState<Notice>(null);
   const [noticeDetail, setNoticeDetail] = useState<string | null>(null);
   const [birthStage, setBirthStage] = useState<BirthTransactionStage | null>(null);
-  const [faucetStage, setFaucetStage] = useState<"idle" | "requesting">("idle");
+  const [faucetStage, setFaucetStage] = useState<FaucetStage>("idle");
   const [balanceRefreshKey, setBalanceRefreshKey] = useState(0);
   const { thru } = useThru();
   const { wallet, selectedAccount, isConnected } = useWallet();
@@ -536,16 +605,20 @@ function DashboardPage() {
   };
 
   const handleFaucet = async () => {
-    if (faucetStage === "requesting") return;
+    if (faucetStage !== "idle") return;
     if (!activeAddress) {
       setNotice("faucet-error");
       setNoticeDetail("Create or unlock a wallet before requesting native Betanet funds.");
       return;
     }
 
-    setFaucetStage("requesting");
-    setNotice(null);
-    setNoticeDetail(null);
+    setFaucetStage(localSigner ? "preparing" : "requesting");
+    setNotice("faucet");
+    setNoticeDetail(localSigner
+      ? "Preparing your on-chain account before requesting faucet funds..."
+      : "Requesting test THRU from Betanet...");
+
+    let baselineBalance: bigint | null = null;
     try {
       if (localSigner) {
         setNotice("faucet");
@@ -553,17 +626,80 @@ function DashboardPage() {
         await localSigner.ensureAccount();
       }
 
+      if (thru) {
+        try {
+          baselineBalance = (await readAccountSnapshot(thru, activeAddress)).balance;
+        } catch {
+          // The balance read is best effort. The claim can still continue.
+        }
+      }
+
+      setFaucetStage("requesting");
+      setNotice("faucet");
+      setNoticeDetail("Requesting test THRU from Betanet...");
       const receipt = await claimFaucet(activeAddress);
+
+      const amount = parseFaucetAmount(receipt.amount);
+      let confirmedBalance: bigint | null = null;
+      if (thru && amount) {
+        setFaucetStage("confirming");
+        setNotice("faucet-submitted");
+        setNoticeDetail("Request accepted. Waiting for your Betanet balance to update...");
+        confirmedBalance = await waitForFaucetBalance(thru, activeAddress, baselineBalance, amount);
+      }
+
       setBalanceRefreshKey((current) => current + 1);
-      if (receipt.status === "confirmed") {
+      if (confirmedBalance !== null) {
         setNotice("faucet-success");
-        setNoticeDetail("Faucet confirmed " + receipt.amount + " native units.");
+        setNoticeDetail(`${receipt.amount} THRU received. Balance is now ${confirmedBalance.toString()} THRU.`);
+      } else if (receipt.status === "confirmed") {
+        setNotice("faucet-success");
+        setNoticeDetail(`${receipt.amount} THRU confirmed by the Betanet faucet.`);
       } else {
         setNotice("faucet-submitted");
-        setNoticeDetail("Faucet accepted the request. Balance will update after Betanet settlement.");
+        setNoticeDetail("Request accepted. Your balance is still settling; check again in a moment.");
       }
     } catch (error) {
-      const detail = error instanceof FaucetApiError
+      let reconciledBalance: bigint | null = null;
+      if (thru) {
+        try {
+          reconciledBalance = (await readAccountSnapshot(thru, activeAddress)).balance;
+        } catch {
+          // Keep the original provider error when the reconciliation read also fails.
+        }
+      }
+
+      const balanceChanged = reconciledBalance !== null && (
+        baselineBalance === null
+          ? reconciledBalance > 0n
+          : reconciledBalance > baselineBalance
+      );
+      if (balanceChanged && reconciledBalance !== null) {
+        setBalanceRefreshKey((current) => current + 1);
+        setNotice("faucet-success");
+        setNoticeDetail(`Balance updated to ${reconciledBalance.toString()} THRU. The faucet transfer is complete.`);
+        return;
+      }
+
+      const responseMayBeDelayed = !(error instanceof FaucetApiError)
+        || error.code === "provider-error"
+        || error.code === "network-error";
+      if (thru && responseMayBeDelayed) {
+        setFaucetStage("confirming");
+        setNotice("faucet-submitted");
+        setNoticeDetail("The faucet response was delayed. Verifying your balance before reporting an error...");
+        reconciledBalance = await waitForBalanceIncrease(thru, activeAddress, baselineBalance);
+        if (reconciledBalance !== null) {
+          setBalanceRefreshKey((current) => current + 1);
+          setNotice("faucet-success");
+          setNoticeDetail(`Balance updated to ${reconciledBalance.toString()} THRU. The faucet transfer is complete.`);
+          return;
+        }
+      }
+
+      const detail = error instanceof FaucetApiError && error.code === "rate-limited" && error.retryAfterSeconds
+        ? `Faucet is cooling down. Try again in ${error.retryAfterSeconds} seconds.`
+        : error instanceof FaucetApiError
         ? error.message
         : error instanceof Error
           ? error.message
@@ -588,10 +724,10 @@ function DashboardPage() {
           <h1>Your ecosystem</h1>
         </div>
         <div className="header-actions">
-          <button className="faucet-button" type="button" onClick={handleFaucet} disabled={faucetStage === "requesting"} aria-busy={faucetStage === "requesting"}>
-            {faucetStage === "requesting" ? "Requesting..." : "Get faucet"}
+          <button className="faucet-button" type="button" onClick={handleFaucet} disabled={faucetStage !== "idle"} aria-busy={faucetStage !== "idle"}>
+            {faucetStage === "preparing" ? "Preparing..." : faucetStage === "confirming" ? "Confirming..." : faucetStage === "requesting" ? "Requesting..." : "Get faucet"}
           </button>
-          <WalletChip refreshKey={balanceRefreshKey} onFaucet={handleFaucet} faucetBusy={faucetStage === "requesting"} />
+          <WalletChip refreshKey={balanceRefreshKey} onFaucet={handleFaucet} faucetBusy={faucetStage !== "idle"} />
         </div>
       </header>
 
