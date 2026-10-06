@@ -1,164 +1,107 @@
 # Cambrian
 
-Cambrian is a wallet-first dapp for Thru Betanet. It gives users a visual
-interface for creating an account, requesting test funds, reading on-chain
-activity, and interacting with persistent Cambrian organisms without using the
-CLI.
+A wallet-first dapp for living on-chain state on Thru Betanet.
 
-> Cambrian is under active development. A fresh Cambrian program and ABI are
-> deployed and verified on Betanet; live wallet approval is still experimental.
+Cambrian connects to the official Thru Wallet, displays native THRU balances
+and account activity, and makes the organism transaction lifecycle visible.
 
 ## Features
 
-- Encrypted browser-local self-custodial wallet with optional Thru Wallet fallback
-- Native account balance and transaction reads
-- Cambrian organism account discovery and decoding
-- Guarded Birth transaction lifecycle
-- Faucet API boundary with validation, cooldown, rate limiting, idempotency,
-  audit events, and server-only provider credentials
-- Responsive landing page and routed dashboard
+- Official Thru Wallet connection and account switching
+- Native THRU balance and token logo
+- Organism discovery filtered by the selected wallet's on-chain controller
+- Loading skeletons, clear empty states, and read-only retry actions
+- Animated transaction steps: approval → submission → confirmation → readable state
+- Green confirmed, yellow pending, and red failed feedback with text and icons
+- Faucet API with validation, cooldown, rate limits, and idempotent claims
 
-## Stack
+Cambrian no longer offers a local wallet. Previously stored local vaults are
+not erased by this change; the removed source remains recoverable in Git history.
 
-- React, TypeScript, and Vite
-- Thru SDK, local HD wallet primitives, and hosted wallet fallback
-- Three.js with React Three Fiber
-- Node.js API using the built-in HTTP server
-- npm workspaces
+## Run locally
 
-## Quick start
-
-Requirements:
-
-- Node.js 22 or newer
-- npm
-
-Install dependencies:
+Requires Node.js 22 or newer and npm.
 
     npm install
-
-Start the API:
-
     npm run api:dev
 
-Start the web app in another terminal:
+In another terminal:
 
     npm run dev
 
-Open http://127.0.0.1:5173.
-
-The API runs at http://127.0.0.1:8787. Without a configured payout provider,
-the faucet endpoint intentionally returns 503 instead of reporting a false
-success.
+Open http://127.0.0.1:5173. The API listens on http://127.0.0.1:8787.
+The Vite proxy forwards same-origin /api requests to the API.
 
 ## Configuration
 
-Use .env.example as the reference for supported variables. The repository
-defaults already point at the verified Betanet deployment; VITE-prefixed values
-can override them for another environment.
+Use [.env.example](.env.example) as the reference. Public Betanet deployment
+defaults are included; a local .env is needed only to override configuration
+or configure a faucet provider.
 
 Important frontend variables:
 
-- VITE_CAMBRIAN_PROGRAM_ID
-- VITE_CAMBRIAN_ABI_ID
-- VITE_THRU_RPC_URL
-- VITE_THRU_WALLET_IFRAME_URL
-- VITE_THRU_EXPLORER_URL
+- VITE_CAMBRIAN_PROGRAM_ID and VITE_CAMBRIAN_ABI_ID
+- VITE_THRU_RPC_URL, VITE_THRU_WALLET_IFRAME_URL, and VITE_THRU_EXPLORER_URL
 - VITE_API_URL
+- VITE_CAMBRIAN_WALLET_BIRTH_ENABLED (false until the ownership upgrade is verified)
 
-Important API-only variables:
+Faucet configuration is server-only. See [API setup](apps/api/README.md).
+Never put private keys, recovery phrases, passkey authentication material, or
+provider credentials in VITE-prefixed variables or commit them to Git.
 
-- FAUCET_AMOUNT_UNITS
-- FAUCET_PROVIDER_URL or FAUCET_CLI_ENABLED
-- FAUCET_PROVIDER_TOKEN (HTTP provider only)
-- FAUCET_CLI_PATH
-- FAUCET_CLI_RPC_URL
-- FAUCET_CLI_FEE_PAYER
-- FAUCET_COOLDOWN_MS
-- FAUCET_RATE_WINDOW_MS
-- FAUCET_RATE_MAX
+## Current Betanet status
 
-Never expose faucet credentials or signing material through VITE-prefixed
-variables. For local CLI payouts, keep the Thru CLI profile on the server
-machine and never put its keys in `.env` or browser code.
+Thru Wallet approval, submission, execution, and account decoding were exercised
+with a confirmed Birth on the existing deployment. Faucet funding was also
+tested through Thru Wallet.
 
-## Commands
+The legacy Birth instruction records the network fee payer as the organism
+controller, which can differ from the selected managed wallet. The new
+wallet_birth instruction and ABI are prepared locally to address this.
+New wallet-owned Birth is deliberately disabled until that program and ABI
+upgrade is deployed and verified. Enabling the frontend flag alone is not an
+upgrade.
+
+Existing organism accounts remain on-chain. A program upgrade does not
+automatically change their controller; any transfer must be separately reviewed
+and approved by the currently authorized controller.
+
+| Resource | Current deployment |
+| --- | --- |
+| Program | `taLnTXq4qblEsC-HkN4QG35Lp72Vnle8gk8UkiAtASymFD` |
+| ABI | `taPciIseW9AzTnNaB6VJyhHkiOwEDfZYwUbdPdfvbvUQuS` |
+
+See the [program release checklist](programs/cambrian/README.md) before enabling
+the new instruction.
+
+## Development
 
 | Command | Purpose |
 | --- | --- |
-| npm run dev | Start the web development server |
-| npm run api:dev | Start the local API |
-| npm run test | Run SDK and faucet tests |
-| npm run typecheck | Type-check the web app |
-| npm run api:typecheck | Type-check the API |
-| npm run build | Create the production web build |
+| npm run dev | Start the web app |
+| npm run api:dev | Start the faucet API |
+| npm run test | Run SDK, ownership, transaction UI, and faucet tests |
+| npm run typecheck | Check the web app |
+| npm run api:typecheck | Check the API |
+| npm run build | Build the production web app |
 
-## Repository structure
+    apps/web/                  React, TypeScript, and Vite interface
+    apps/api/                  Server-only faucet service
+    packages/cambrian-sdk/      Instruction builders and chain services
+    packages/wallet-core/       Official wallet configuration and metadata
+    packages/config/           Shared Betanet defaults
+    programs/cambrian/          C program source and ownership-upgrade ABI
+    tests/                     Offline regression and component-render tests
 
-    apps/
-      web/                 React dapp
-      api/                 Server-only faucet boundary
-    packages/
-      cambrian-sdk/        Instruction builders, decoders, and chain services
-      config/              Shared Betanet configuration
-      wallet-core/         Local vault, Thru signer, and hosted wallet integration
-    tests/                 SDK and faucet tests
+## Transaction safety
 
-## Current status
+Wallet approval is not network confirmation. Birth is shown as complete only
+after successful execution and a readable organism with the expected controller.
+Pending public receipts are scoped to the wallet and program in sessionStorage.
+Checking a pending transaction or faucet claim never signs or sends it again.
 
-The interface, wallet integration, encrypted local-wallet foundation, read
-services, guarded Birth flow, and faucet boundary are implemented. The fresh
-program and ABI are live on Betanet, and the published ABI was read back and
-matched locally. Live Birth still needs wallet end-to-end verification, while
-faucet payouts still need an approved native-faucet provider.
+Missing deployment or payout configuration fails closed. Betanet assets are
+for testing only.
 
-### Wallet custody modes
-
-Cambrian currently exposes two signing paths:
-
-The wallet is intentionally presented as an in-context popover from the app
-wallet trigger, similar to an extension wallet. There is no separate wallet
-dashboard route; the current page stays visible while account actions are
-opened and closed.
-
-- **Local self-custody:** a Thru BIP39/HD account is created or restored in the
-  browser. The encrypted vault is stored in IndexedDB using PBKDF2 + AES-GCM;
-  the private key is held in memory only while the wallet is unlocked. The
-  recovery phrase is shown once and is never sent to Cambrian's API.
-- **Hosted Thru Wallet:** the existing embedded Thru Wallet flow remains
-  available as a fallback for users who prefer managed wallet/passkey UX.
-
-The local wallet uses Thru's official key derivation, Ed25519 signing, and
-transaction builder primitives. Cambrian does not implement its own key
-algorithm or transaction wire format. This is an early self-custody slice and
-still needs browser QA, account funding, and a live Betanet Birth smoke test
-before it should be treated as production-ready.
-
-### Verified Betanet deployment
-
-| Resource | Address | Status |
-| --- | --- | --- |
-| Cambrian program | `taLnTXq4qblEsC-HkN4QG35Lp72Vnle8gk8UkiAtASymFD` | Live |
-| Cambrian ABI | `taPciIseW9AzTnNaB6VJyhHkiOwEDfZYwUbdPdfvbvUQuS` | Published and read back |
-| Program binary | SHA-256 `9B22018403F4CA745E22B5F13A71B63E7F01423FC75AF18423D3F89D5F3359AD` | Verified |
-
-Explorer links:
-
-- [Program account](https://scan.thru.org/address/taLnTXq4qblEsC-HkN4QG35Lp72Vnle8gk8UkiAtASymFD?rpc=https%3A%2F%2Frpc.betanet.thru.org)
-- [ABI account](https://scan.thru.org/address/taPciIseW9AzTnNaB6VJyhHkiOwEDfZYwUbdPdfvbvUQuS?rpc=https%3A%2F%2Frpc.betanet.thru.org)
-
-## Security
-
-- Local wallet secrets are encrypted at rest in IndexedDB; plaintext private
-  keys are held only in memory while the wallet is unlocked and cleared on lock.
-- Recovery phrases are never sent to the Cambrian API and are not included in
-  the public wallet snapshot.
-- Hosted-wallet approval remains an optional signing boundary for that mode.
-- Faucet provider credentials stay on the API server.
-- Missing deployment or faucet configuration fails closed.
-
-## Links
-
-- Thru documentation: https://thru.org/docs/
-- Thru explorer: https://scan.thru.org/
-- Cambrian program reference: https://github.com/Alice699/Thru-betanet-program
+[Thru documentation](https://thru.org/docs/) ·
+[Thru explorer](https://scan.thru.org/)

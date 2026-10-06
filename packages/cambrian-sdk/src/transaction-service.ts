@@ -5,7 +5,7 @@ import type { CambrianConfig } from "@cambrian/config";
 import { base64ToBytes } from "./abi.js";
 import { prepareBirthIntent, type BirthIntentOptions, type PreparedBirthIntent } from "./client.js";
 import { assertBirthDeployment } from "./deployment.js";
-import { readOrganism, type CambrianOrganismRecord } from "./read-service.js";
+import { readOrganism, isOrganismControlledBy, type CambrianOrganismRecord } from "./read-service.js";
 import { CAMBRIAN_BIRTH_STATE_UNITS, CAMBRIAN_ORGANISM_MAGIC, CAMBRIAN_ORGANISM_VERSION } from "./constants.js";
 
 export type BirthTransactionStage =
@@ -138,7 +138,11 @@ export async function confirmBirthTransaction(
     try {
       const account = await readOrganism(client, receipt.prepared.organismAddress);
       if (account.owner === config.programId && account.state.magic === CAMBRIAN_ORGANISM_MAGIC && account.state.version === CAMBRIAN_ORGANISM_VERSION) {
-        organism = account;
+        // A confirmed transaction is not a completed wallet Birth until ownership matches.
+        if (receipt.prepared.intent.review?.instruction !== "wallet_birth"
+          || (receipt.prepared.intent.walletAddress && isOrganismControlledBy(account, receipt.prepared.intent.walletAddress))) {
+          organism = account;
+        }
       }
     } catch {
       // Execution can finish before the account read endpoint exposes its data.
@@ -194,7 +198,10 @@ export async function executeBirthTransaction(
       throw new BirthResourceBudgetError(transaction.requestedStateUnits);
     }
     signature = client.helpers.createSignature(rawTransaction.slice(-64)).toThruFmt();
-    notify({ stage: "submitting", prepared, intent: prepared.intent });
+    options.signal?.throwIfAborted();
+    // Publish the public receipt before opening the response stream. A wallet
+    // switch or dropped stream must not lose the only safe way to reconcile it.
+    notify({ stage: "submitting", prepared, intent: prepared.intent, signature });
 
     let reachedExecution = false;
 

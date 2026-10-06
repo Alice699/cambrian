@@ -7,6 +7,8 @@ export interface CambrianConfig {
   explorerUrl: string;
   programId: string;
   abiId: string;
+  /** Enable only after the wallet_birth (tag 5) program and ABI are deployed. */
+  walletBirthEnabled: boolean;
 }
 
 /**
@@ -21,6 +23,7 @@ export const defaultCambrianConfig: CambrianConfig = {
   explorerUrl: "https://scan.thru.org",
   programId: "taLnTXq4qblEsC-HkN4QG35Lp72Vnle8gk8UkiAtASymFD",
   abiId: "taPciIseW9AzTnNaB6VJyhHkiOwEDfZYwUbdPdfvbvUQuS",
+  walletBirthEnabled: false,
 };
 
 export function createCambrianConfig(overrides: Partial<CambrianConfig> = {}): CambrianConfig {

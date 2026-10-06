@@ -42,6 +42,9 @@ export async function prepareBirthIntent(
   options: BirthIntentOptions,
 ): Promise<PreparedBirthIntent> {
   if (!config.programId) throw new Error("Cambrian program ID is not configured yet");
+  if (options.signingMode === "thru-wallet" && !config.walletBirthEnabled) {
+    throw new Error("Wallet-owned Birth is awaiting the program upgrade. Nothing has been signed or submitted.");
+  }
   const seed = utf8ToBytes32(options.seed);
   const entropy = options.entropy ?? randomBytes32();
   if (entropy.length !== 32) throw new Error("entropy must be exactly 32 bytes");
@@ -63,6 +66,7 @@ export async function prepareBirthIntent(
     : null;
   const instructionData = encodeBirthInstruction({
     organismAccountIndex: walletContext?.getAccountIndex(organismBytes) ?? 2,
+    ...(walletContext ? { controllerAccountIndex: walletContext.walletAccountIdx } : {}),
     seed,
     entropy,
     proof: stateProof.proof,
@@ -84,7 +88,7 @@ export async function prepareBirthIntent(
         appName: "Cambrian",
         programAddress: config.programId,
         abiName: CAMBRIAN_INSTRUCTION_ABI_NAME,
-        instruction: "birth",
+        instruction: walletContext ? "wallet_birth" : "birth",
       },
     },
   };

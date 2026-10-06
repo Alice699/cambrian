@@ -21,3 +21,8 @@
 
 # Isolated wallet rendering checks and screenshots.
 /tmp/wallet-ui-qa/
+
+# Local program build and generated verification artifacts.
+/programs/cambrian/build/
+/programs/cambrian/generated/
+/tmp/cambrian-ui-qa/

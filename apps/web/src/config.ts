@@ -10,4 +10,5 @@ export const appConfig = createCambrianConfig({
   ...(env.VITE_THRU_EXPLORER_URL ? { explorerUrl: env.VITE_THRU_EXPLORER_URL } : {}),
   ...(env.VITE_CAMBRIAN_PROGRAM_ID ? { programId: env.VITE_CAMBRIAN_PROGRAM_ID } : {}),
   ...(env.VITE_CAMBRIAN_ABI_ID ? { abiId: env.VITE_CAMBRIAN_ABI_ID } : {}),
+  walletBirthEnabled: env.VITE_CAMBRIAN_WALLET_BIRTH_ENABLED === "true",
 });

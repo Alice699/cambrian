@@ -1,0 +1,490 @@
+abi:
+  package: cambrian.lifeform
+  name: Cambrian Lifeform
+  abi-version: 1
+  package-version: 0.2.0
+  description: Deterministic digital-life state transitions for Thru Betanet.
+
+imports: []
+
+options:
+  program-metadata:
+    root-types:
+      instruction-root: CambrianInstruction
+      account-root: CambrianOrganism
+      errors: CambrianError
+      events: CambrianEvent
+
+types:
+  - name: Bytes32
+    kind:
+      array:
+        element-type:
+          primitive: u8
+        size:
+          literal:
+            u64: 32
+
+  - name: BirthArgs
+    kind:
+      struct:
+        packed: true
+        fields:
+          - name: organism_account_idx
+            field-type:
+              primitive: u16
+          - name: seed
+            field-type:
+              type-ref:
+                name: Bytes32
+          - name: entropy
+            field-type:
+              type-ref:
+                name: Bytes32
+          - name: proof_size
+            field-type:
+              primitive: u32
+          - name: proof
+            field-type:
+              array:
+                size:
+                  field-ref:
+                    path: [proof_size]
+                element-type:
+                  primitive: u8
+
+  - name: WalletBirthArgs
+    kind:
+      struct:
+        packed: true
+        fields:
+          - name: organism_account_idx
+            field-type:
+              primitive: u16
+          - name: controller_account_idx
+            field-type:
+              primitive: u16
+          - name: seed
+            field-type:
+              type-ref:
+                name: Bytes32
+          - name: entropy
+            field-type:
+              type-ref:
+                name: Bytes32
+          - name: proof_size
+            field-type:
+              primitive: u32
+          - name: proof
+            field-type:
+              array:
+                size:
+                  field-ref:
+                    path: [proof_size]
+                element-type:
+                  primitive: u8
+
+  - name: PulseArgs
+    kind:
+      struct:
+        packed: true
+        fields:
+          - name: organism_account_idx
+            field-type:
+              primitive: u16
+          - name: catalyst
+            field-type:
+              primitive: u64
+
+  - name: EncounterArgs
+    kind:
+      struct:
+        packed: true
+        fields:
+          - name: actor_account_idx
+            field-type:
+              primitive: u16
+          - name: donor_account_idx
+            field-type:
+              primitive: u16
+          - name: catalyst
+            field-type:
+              primitive: u64
+
+  - name: ReproduceArgs
+    kind:
+      struct:
+        packed: true
+        fields:
+          - name: parent_a_account_idx
+            field-type:
+              primitive: u16
+          - name: parent_b_account_idx
+            field-type:
+              primitive: u16
+          - name: child_account_idx
+            field-type:
+              primitive: u16
+          - name: seed
+            field-type:
+              type-ref:
+                name: Bytes32
+          - name: entropy
+            field-type:
+              type-ref:
+                name: Bytes32
+          - name: proof_size
+            field-type:
+              primitive: u32
+          - name: proof
+            field-type:
+              array:
+                size:
+                  field-ref:
+                    path: [proof_size]
+                element-type:
+                  primitive: u8
+
+  - name: TransferArgs
+    kind:
+      struct:
+        packed: true
+        fields:
+          - name: organism_account_idx
+            field-type:
+              primitive: u16
+          - name: new_controller_account_idx
+            field-type:
+              primitive: u16
+
+  - name: CambrianInstruction
+    kind:
+      struct:
+        packed: true
+        fields:
+          - name: tag
+            field-type:
+              primitive: u8
+          - name: payload
+            field-type:
+              enum:
+                tag-ref:
+                  field-ref:
+                    path: [tag]
+                variants:
+                  - name: birth
+                    tag-value: 0
+                    variant-type:
+                      type-ref:
+                        name: BirthArgs
+                  - name: pulse
+                    tag-value: 1
+                    variant-type:
+                      type-ref:
+                        name: PulseArgs
+                  - name: encounter
+                    tag-value: 2
+                    variant-type:
+                      type-ref:
+                        name: EncounterArgs
+                  - name: reproduce
+                    tag-value: 3
+                    variant-type:
+                      type-ref:
+                        name: ReproduceArgs
+                  - name: transfer_control
+                    tag-value: 4
+                    variant-type:
+                      type-ref:
+                        name: TransferArgs
+
+                  - name: wallet_birth
+                    tag-value: 5
+                    variant-type:
+                      type-ref:
+                        name: WalletBirthArgs
+
+  - name: CambrianOrganism
+    kind:
+      struct:
+        packed: true
+        fields:
+          - name: magic
+            field-type:
+              primitive: u32
+          - name: version
+            field-type:
+              primitive: u8
+          - name: status
+            field-type:
+              primitive: u8
+          - name: generation
+            field-type:
+              primitive: u16
+          - name: controller
+            field-type:
+              type-ref:
+                name: Bytes32
+          - name: parent_a
+            field-type:
+              type-ref:
+                name: Bytes32
+          - name: parent_b
+            field-type:
+              type-ref:
+                name: Bytes32
+          - name: genome
+            field-type:
+              type-ref:
+                name: Bytes32
+          - name: lineage
+            field-type:
+              type-ref:
+                name: Bytes32
+          - name: memory
+            field-type:
+              type-ref:
+                name: Bytes32
+          - name: born_slot
+            field-type:
+              primitive: u64
+          - name: last_pulse_slot
+            field-type:
+              primitive: u64
+          - name: age
+            field-type:
+              primitive: u64
+          - name: energy
+            field-type:
+              primitive: u64
+          - name: vitality
+            field-type:
+              primitive: u64
+          - name: pulse_count
+            field-type:
+              primitive: u64
+          - name: encounter_count
+            field-type:
+              primitive: u64
+          - name: offspring_count
+            field-type:
+              primitive: u64
+
+  - name: BirthEvent
+    kind:
+      struct:
+        packed: true
+        fields:
+          - name: organism
+            field-type:
+              type-ref:
+                name: Bytes32
+          - name: controller
+            field-type:
+              type-ref:
+                name: Bytes32
+          - name: slot
+            field-type:
+              primitive: u64
+          - name: generation
+            field-type:
+              primitive: u16
+          - name: energy
+            field-type:
+              primitive: u64
+          - name: vitality
+            field-type:
+              primitive: u64
+          - name: genome
+            field-type:
+              type-ref:
+                name: Bytes32
+          - name: lineage
+            field-type:
+              type-ref:
+                name: Bytes32
+
+  - name: PulseEvent
+    kind:
+      struct:
+        packed: true
+        fields:
+          - name: organism
+            field-type:
+              type-ref:
+                name: Bytes32
+          - name: slot
+            field-type:
+              primitive: u64
+          - name: age
+            field-type:
+              primitive: u64
+          - name: energy_before
+            field-type:
+              primitive: u64
+          - name: energy_after
+            field-type:
+              primitive: u64
+          - name: vitality
+            field-type:
+              primitive: u64
+          - name: status
+            field-type:
+              primitive: u8
+          - name: mutation_bit
+            field-type:
+              primitive: u16
+          - name: genome
+            field-type:
+              type-ref:
+                name: Bytes32
+          - name: lineage
+            field-type:
+              type-ref:
+                name: Bytes32
+
+  - name: EncounterEvent
+    kind:
+      struct:
+        packed: true
+        fields:
+          - name: actor
+            field-type:
+              type-ref:
+                name: Bytes32
+          - name: donor
+            field-type:
+              type-ref:
+                name: Bytes32
+          - name: compatibility
+            field-type:
+              primitive: u16
+          - name: outcome
+            field-type:
+              primitive: u8
+          - name: gene_transferred
+            field-type:
+              primitive: u8
+          - name: energy_before
+            field-type:
+              primitive: u64
+          - name: energy_after
+            field-type:
+              primitive: u64
+          - name: encounter_count
+            field-type:
+              primitive: u64
+          - name: genome
+            field-type:
+              type-ref:
+                name: Bytes32
+          - name: memory
+            field-type:
+              type-ref:
+                name: Bytes32
+
+  - name: ReproduceEvent
+    kind:
+      struct:
+        packed: true
+        fields:
+          - name: child
+            field-type:
+              type-ref:
+                name: Bytes32
+          - name: parent_a
+            field-type:
+              type-ref:
+                name: Bytes32
+          - name: parent_b
+            field-type:
+              type-ref:
+                name: Bytes32
+          - name: generation
+            field-type:
+              primitive: u16
+          - name: mutation_bit
+            field-type:
+              primitive: u16
+          - name: energy
+            field-type:
+              primitive: u64
+          - name: genome
+            field-type:
+              type-ref:
+                name: Bytes32
+          - name: lineage
+            field-type:
+              type-ref:
+                name: Bytes32
+
+  - name: TransferEvent
+    kind:
+      struct:
+        packed: true
+        fields:
+          - name: organism
+            field-type:
+              type-ref:
+                name: Bytes32
+          - name: old_controller
+            field-type:
+              type-ref:
+                name: Bytes32
+          - name: new_controller
+            field-type:
+              type-ref:
+                name: Bytes32
+          - name: slot
+            field-type:
+              primitive: u64
+
+  - name: CambrianEvent
+    kind:
+      struct:
+        packed: true
+        fields:
+          - name: tag
+            field-type:
+              primitive: u8
+          - name: payload
+            field-type:
+              enum:
+                tag-ref:
+                  field-ref:
+                    path: [tag]
+                variants:
+                  - name: birth
+                    tag-value: 0
+                    variant-type:
+                      type-ref:
+                        name: BirthEvent
+                  - name: pulse
+                    tag-value: 1
+                    variant-type:
+                      type-ref:
+                        name: PulseEvent
+                  - name: encounter
+                    tag-value: 2
+                    variant-type:
+                      type-ref:
+                        name: EncounterEvent
+                  - name: reproduce
+                    tag-value: 3
+                    variant-type:
+                      type-ref:
+                        name: ReproduceEvent
+                  - name: transfer_control
+                    tag-value: 4
+                    variant-type:
+                      type-ref:
+                        name: TransferEvent
+
+  - name: CambrianError
+    kind:
+      struct:
+        packed: true
+        fields:
+          - name: code
+            field-type:
+              primitive: u64

@@ -4,6 +4,8 @@ const BYTES32_LENGTH = 32;
 
 export interface BirthInstructionInput {
   organismAccountIndex?: number;
+  /** Explicitly authorized managed wallet. Omit only for the legacy wire format. */
+  controllerAccountIndex?: number;
   seed: Uint8Array;
   entropy: Uint8Array;
   proof: Uint8Array;
@@ -11,6 +13,7 @@ export interface BirthInstructionInput {
 
 export function encodeBirthInstruction({
   organismAccountIndex = 2,
+  controllerAccountIndex,
   seed,
   entropy,
   proof,
@@ -18,19 +21,25 @@ export function encodeBirthInstruction({
   if (!Number.isInteger(organismAccountIndex) || organismAccountIndex < 0 || organismAccountIndex > 0xffff) {
     throw new Error("organismAccountIndex must fit in an unsigned 16-bit integer");
   }
+  if (controllerAccountIndex !== undefined && (!Number.isInteger(controllerAccountIndex)
+    || controllerAccountIndex < 2 || controllerAccountIndex > 0xffff || controllerAccountIndex === organismAccountIndex)) {
+    throw new Error("controllerAccountIndex must reference a distinct managed wallet account");
+  }
   assertBytes32(seed, "seed");
   assertBytes32(entropy, "entropy");
   if (proof.length > 0xffff_ffff) throw new Error("proof is too large");
 
-  // CambrianInstruction::birth tag + BirthArgs (u16, bytes32, bytes32, u32, bytes[]).
-  const output = new Uint8Array(71 + proof.length);
+  // Legacy birth (tag 0) is unchanged; wallet_birth (tag 5) adds a controller u16.
+  const offset = controllerAccountIndex === undefined ? 0 : 2;
+  const output = new Uint8Array(71 + offset + proof.length);
   const view = new DataView(output.buffer);
-  output[0] = 0;
+  output[0] = controllerAccountIndex === undefined ? 0 : 5;
   view.setUint16(1, organismAccountIndex, true);
-  output.set(seed, 3);
-  output.set(entropy, 35);
-  view.setUint32(67, proof.length, true);
-  output.set(proof, 71);
+  if (controllerAccountIndex !== undefined) view.setUint16(3, controllerAccountIndex, true);
+  output.set(seed, 3 + offset);
+  output.set(entropy, 35 + offset);
+  view.setUint32(67 + offset, proof.length, true);
+  output.set(proof, 71 + offset);
   return output;
 }
 

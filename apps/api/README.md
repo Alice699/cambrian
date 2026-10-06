@@ -38,6 +38,8 @@ browser, and do not enable this local signer on a public server.
 The API returns 503 instead of pretending success when the provider is missing
 or the CLI command fails.
 
-Local self-custody wallets must first exist as on-chain Thru accounts. Cambrian
-provisions that account in the browser, using the unlocked local key, before it
-calls this faucet endpoint. Hosted Thru Wallet accounts skip that step.
+Cambrian accepts the account selected in the official Thru Wallet. It no longer
+creates browser-local wallets or provisions accounts with a local private key.
+The frontend distinguishes a confirmed payout from an accepted or uncertain
+response. Balance reconciliation and the Check status action are read-only;
+they never submit another claim automatically.

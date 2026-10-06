@@ -3,6 +3,7 @@ import {
   Filter,
   FilterParamValue,
   PageRequest,
+  Pubkey,
   type Account,
   type Thru,
 } from "@thru/sdk";
@@ -30,12 +31,19 @@ export interface CambrianOrganismList {
   nextPageToken?: string;
 }
 
+export function isOrganismControlledBy(organism: CambrianOrganismRecord, address: string): boolean {
+  const controller = organism.state.controller;
+  return Pubkey.from(controller).toThruFmt() === Pubkey.from(address).toThruFmt();
+}
+
 export interface CambrianTransactionSummary {
   signature: string | null;
   feePayer: string;
   program: string;
   slot: bigint | null;
   instructionBytes: number;
+  status: "confirmed" | "pending" | "failed" | "unavailable";
+  vmError: number | null;
 }
 
 export interface CambrianTransactionList {
@@ -128,6 +136,40 @@ export async function listCambrianOrganisms(
   };
 }
 
+/** Wallet-scoped discovery. Program owner and wallet controller are different fields. */
+export async function listWalletCambrianOrganisms(
+  client: Thru,
+  config: CambrianConfig,
+  walletAddress: string,
+  options: { signal?: AbortSignal; maxPages?: number } = {},
+): Promise<CambrianOrganismList> {
+  // Validate before any RPC. Never fall back to global discovery on disconnect.
+  const address = Pubkey.from(walletAddress).toThruFmt();
+  const organisms: CambrianOrganismRecord[] = [];
+  const unreadableAccounts: CambrianOrganismList["unreadableAccounts"] = [];
+  const seenAddresses = new Set<string>();
+  const seenTokens = new Set<string>();
+  let pageToken: string | undefined;
+  const maxPages = Math.min(100, Math.max(1, options.maxPages ?? 50));
+  for (let page = 0; page < maxPages; page += 1) {
+    options.signal?.throwIfAborted();
+    const result = await listCambrianOrganisms(client, config, { pageSize: 100, pageToken });
+    options.signal?.throwIfAborted();
+    for (const organism of result.organisms) {
+      if (isOrganismControlledBy(organism, address) && !seenAddresses.has(organism.address)) {
+        organisms.push(organism);
+        seenAddresses.add(organism.address);
+      }
+    }
+    unreadableAccounts.push(...result.unreadableAccounts);
+    pageToken = result.nextPageToken;
+    if (!pageToken) return { organisms, unreadableAccounts };
+    if (seenTokens.has(pageToken)) throw new Error("The organism index repeated a page. Please retry the read.");
+    seenTokens.add(pageToken);
+  }
+  throw new Error("The organism index could not be fully checked. Please retry; an empty collection has not been confirmed.");
+}
+
 export async function listAccountTransactions(
   client: Thru,
   address: string,
@@ -148,6 +190,10 @@ export async function listAccountTransactions(
       program: transaction.program.toThruFmt(),
       slot: transaction.slot ?? null,
       instructionBytes: transaction.instructionData?.length ?? transaction.instructionDataSize ?? 0,
+      status: transaction.executionResult
+        ? transaction.executionResult.vmError === 0 ? "confirmed" as const : "failed" as const
+        : transaction.getSignature() ? "pending" as const : "unavailable" as const,
+      vmError: transaction.executionResult?.vmError ?? null,
     })),
     nextPageToken: response.page?.nextPageToken,
   };

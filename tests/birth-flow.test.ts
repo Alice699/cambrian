@@ -18,18 +18,20 @@ import {
 const testPrivateKey = new Uint8Array(32).fill(0x11);
 const feePayer = Pubkey.from(await keys.fromPrivateKey(testPrivateKey)).toThruFmt();
 const selectedAccount = Pubkey.from(new Uint8Array(32).fill(0x22)).toThruFmt();
-const config = defaultCambrianConfig;
+const config = { ...defaultCambrianConfig, walletBirthEnabled: true };
 const fastPolling = { confirmationTimeoutMs: 0, organismTimeoutMs: 0, pollIntervalMs: 0 };
 const birthOptions = { ...fastPolling, walletAddress: selectedAccount, signingMode: "thru-wallet" as const, seed: "birth-flow-test", entropy: new Uint8Array(32).fill(0x33) };
 
 interface HarnessOptions {
-  stream?: "confirmed" | "accepted" | "disconnect" | "failed";
+  stream?: "confirmed" | "accepted" | "disconnect" | "disconnect-before-update" | "failed";
   status?: "confirmed" | "pending" | "unavailable" | "failed";
   missingAccountReads?: number;
   wrongOwner?: boolean;
   wrongMagic?: boolean;
+  wrongController?: boolean;
   rejectApproval?: boolean;
   afterApproval?: () => void;
+  afterSubmission?: () => void;
   signedStateUnits?: number;
   executionVmError?: number;
 }
@@ -59,6 +61,8 @@ function harness(options: HarnessOptions = {}) {
       sendAndTrack: async function* (raw: Uint8Array) {
         trace.submissions += 1;
         trace.submittedBytes = raw;
+        options.afterSubmission?.();
+        if (options.stream === "disconnect-before-update") throw new Error("RPC stream disconnected before acknowledging the signature");
         yield { status: 2, signature: { value: raw.slice(-64) } };
         if (options.stream === "disconnect") throw new Error("RPC stream disconnected");
         if (options.stream !== "accepted") {
@@ -81,6 +85,7 @@ function harness(options: HarnessOptions = {}) {
       view.setUint32(0, options.wrongMagic ? 0 : 0x43414d42, true);
       view.setUint8(4, 1);
       view.setUint8(5, 1);
+      data.set(Pubkey.from(options.wrongController ? feePayer : selectedAccount).toBytes(), 8);
       view.setBigUint64(200, 123n, true);
       view.setBigUint64(208, 123n, true);
       view.setBigUint64(224, 100n, true);
@@ -150,6 +155,11 @@ test("Birth approves the selected Thru account, submits the exact wallet bytes, 
   const accounts = [transaction.feePayer, transaction.program, ...transaction.readWriteAccounts, ...transaction.readOnlyAccounts].map(key => key.toThruFmt());
   const bytes = base64ToBytes(trace.intents[0].instructionData);
   const organismIndex = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint16(1, true);
+  const controllerIndex = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint16(3, true);
+  assert.equal(bytes[0], 5);
+  assert.equal(trace.intents[0].review?.instruction, "wallet_birth");
+  assert.equal(accounts[controllerIndex], selectedAccount);
+  assert.notEqual(accounts[controllerIndex], transaction.feePayer.toThruFmt());
   assert.equal(accounts[organismIndex], result.prepared.organismAddress);
   assert.notEqual(accounts[organismIndex], selectedAccount);
   assert.ok(trace.intents[0].readWriteAddresses?.includes(result.prepared.organismAddress));
@@ -163,6 +173,7 @@ test("Birth approves the selected Thru account, submits the exact wallet bytes, 
     "preparing", "awaiting-approval", "signed", "submitting", "submitted", "syncing", "confirmed",
   ]);
   assert.equal(trace.statusReads, 0);
+  assert.equal(trace.updates.find(update => update.stage === "submitting")?.signature, result.signature);
 });
 
 test("regression: the live failed wallet layout targets organism index 3, not the existing wallet at index 2", async () => {
@@ -249,7 +260,7 @@ test("managed Birth indices follow byte sorting rather than always choosing inde
   assert.deepEqual(prepared.intent.readWriteAddresses, [organismAddress, walletAddress]);
 });
 
-test("direct local Birth retains its original account layout without a passkey wrapper", async () => {
+test("legacy direct Birth retains its original account layout without a passkey wrapper", async () => {
   const { client } = harness();
   const prepared = await prepareBirthIntent(client, config, { ...birthOptions, signingMode: "direct" });
   const bytes = base64ToBytes(prepared.intent.instructionData);
@@ -338,7 +349,7 @@ test("organism polling tolerates transient account indexing delays", async () =>
   assert.equal(trace.submissions, 1);
 });
 
-for (const invalid of ["wrongOwner", "wrongMagic"] as const) {
+for (const invalid of ["wrongOwner", "wrongMagic", "wrongController"] as const) {
   test(`does not display an unrelated or invalid organism account (${invalid})`, async () => {
     const { client, wallet, trace, onUpdate } = harness({ [invalid]: true });
     const result = await executeBirthTransaction(client, config, wallet, { ...birthOptions, onUpdate });
@@ -353,6 +364,28 @@ test("cancellation after wallet approval does not submit the signed transaction"
   await assert.rejects(() => executeBirthTransaction(client, config, wallet, { ...birthOptions, signal: controller.signal }), { name: "AbortError" });
   assert.equal(trace.approvals, 1);
   assert.equal(trace.submissions, 0);
+});
+
+test("a wallet switch during a silent submission retains its public receipt for read-only recovery", async () => {
+  const controller = new AbortController();
+  const { client, wallet, trace, onUpdate } = harness({ stream: "disconnect-before-update", afterSubmission: () => controller.abort() });
+  let firstSignature: string | undefined;
+  const receipt = await executeBirthTransaction(client, config, wallet, { ...birthOptions, signal: controller.signal, onUpdate(update) {
+    if (update.stage === "submitting") {
+      assert.equal(trace.submissions, 0);
+      firstSignature = update.signature;
+    }
+    onUpdate(update);
+  } });
+  assert.ok(firstSignature);
+  assert.equal(receipt.signature, firstSignature);
+  assert.equal(receipt.stage, "submitted");
+  assert.equal(trace.statusReads, 0);
+  assert.equal(trace.accountReads, 0);
+  const recovered = await confirmBirthTransaction(client, config, receipt, fastPolling);
+  assert.equal(recovered.organism?.address, receipt.prepared.organismAddress);
+  assert.equal(trace.approvals, 1);
+  assert.equal(trace.submissions, 1);
 });
 
 test("a disconnected wallet cannot sign Birth", async () => {

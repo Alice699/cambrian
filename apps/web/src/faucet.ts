@@ -47,7 +47,8 @@ export async function claimFaucet(address: string, signal?: AbortSignal): Promis
       body: JSON.stringify({ address }),
       signal,
     });
-  } catch {
+  } catch (cause) {
+    if (signal?.aborted) throw cause;
     throw new FaucetApiError(
       "Faucet API tidak dapat dijangkau. Pastikan service API sedang berjalan.",
       { status: 0, code: "network-error" },

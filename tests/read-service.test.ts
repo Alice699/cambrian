@@ -3,7 +3,7 @@ import test from "node:test";
 import { AccountView, Pubkey, type Thru } from "@thru/sdk";
 import { defaultCambrianConfig as config } from "../packages/config/src/index.ts";
 import { decodeCambrianOrganism } from "../packages/cambrian-sdk/src/abi.ts";
-import { listCambrianOrganisms, readOrganism } from "../packages/cambrian-sdk/src/read-service.ts";
+import { listAccountTransactions, listCambrianOrganisms, readOrganism } from "../packages/cambrian-sdk/src/read-service.ts";
 import { confirmBirthTransaction, type BirthTransactionUpdate } from "../packages/cambrian-sdk/src/transaction-service.ts";
 import { confirmedBirthAccount as fixture } from "./fixtures/confirmed-birth-account.ts";
 
@@ -56,6 +56,19 @@ test("regression: decodes the real confirmed Birth account header and live state
   assert.equal(state.energy, 2048n);
   assert.equal(state.vitality, 845n);
   assert.equal(Pubkey.from(state.controller).toThruFmt(), fixture.controller);
+});
+
+test("activity uses real execution results instead of treating a listed or slotted transaction as successful", async () => {
+  const transaction = (vmError: number | undefined, signature: string | null) => ({
+    getSignature: () => signature ? { toThruFmt: () => signature } : undefined,
+    feePayer: Pubkey.from(fixture.controller), program: Pubkey.from(config.programId),
+    slot: 123n, instructionDataSize: 71,
+    executionResult: vmError === undefined ? undefined : { vmError },
+  });
+  const client = { transactions: { listForAccount: async () => ({ transactions: [transaction(0, "ok"), transaction(-763, "failed"), transaction(undefined, "unknown"), transaction(undefined, null)] }) } } as unknown as Thru;
+  const result = await listAccountTransactions(client, fixture.controller);
+  assert.deepEqual(result.transactions.map(item => item.status), ["confirmed", "failed", "pending", "unavailable"]);
+  assert.deepEqual(result.transactions.map(item => item.vmError), [0, -763, null, null]);
 });
 
 test("reads a real-layout organism through the FULL account endpoint", async () => {
