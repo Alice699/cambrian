@@ -1,16 +1,20 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { createElement } from "react";
+import { ThruProvider } from "@thru/wallet/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createServer } from "vite";
 import { fileURLToPath } from "node:url";
 
 // Render real React components, without a browser, passkey, or network writes.
-let server, components, app;
+let server, components, app, faucet, address, wallet;
 before(async () => {
   server = await createServer({ root: fileURLToPath(new URL("../apps/web", import.meta.url)), server: { middlewareMode: true, hmr: false, watch: null }, appType: "custom", logLevel: "silent" });
   components = await server.ssrLoadModule("/src/components/TransactionFeedback.tsx");
   app = await server.ssrLoadModule("/src/App.tsx");
+  faucet = await server.ssrLoadModule("/src/components/FaucetButton.tsx");
+  address = await server.ssrLoadModule("/src/components/AddressDisplay.tsx");
+  wallet = await server.ssrLoadModule("/src/components/WalletControl.tsx");
 });
 after(async () => { await server?.close(); });
 
@@ -74,4 +78,61 @@ test("history badges never color an unknown execution green", () => {
     assert.match(html, new RegExp(`transaction-status is-${tone}`));
     assert.match(html, new RegExp(label));
   }
+});
+
+const renderFaucet = (extra = {}) => renderToStaticMarkup(createElement(faucet.FaucetButton, { stage: "idle", pending: false, connected: true, onClick: () => {}, ...extra }));
+
+test("the faucet button disables disconnected and running claims with clear status text", () => {
+  const disconnected = renderFaucet({ connected: false });
+  assert.match(disconnected, /disabled=""/);
+  assert.match(disconnected, /Connect a wallet first/);
+  for (const stage of ["preparing", "requesting", "confirming"]) {
+    const html = renderFaucet({ stage });
+    assert.match(html, /faucet-button is-pending/);
+    assert.match(html, /aria-busy="true"/);
+    assert.match(html, /disabled=""/);
+    assert.match(html, /no repeat claim/);
+  }
+});
+
+test("an idle delayed faucet claim offers an enabled read-only check instead of another claim", () => {
+  const html = renderFaucet({ pending: true });
+  assert.match(html, /Check balance/);
+  assert.match(html, /Read-only · no new claim/);
+  assert.match(html, /aria-busy="false"/);
+  assert.doesNotMatch(html, /disabled=|Get test THRU/);
+});
+
+test("an address is compact visually but keeps the full value in its accessible label and explorer URL", () => {
+  const value = "taABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  const html = renderToStaticMarkup(createElement(address.AddressDisplay, { value, label: "Wallet 1", compact: true }));
+  assert.match(html, /taABCDEF…456789/);
+  assert.match(html, new RegExp(`title="${value}"`));
+  assert.match(html, new RegExp(`/address/${value}\\?rpc=`));
+  assert.match(html, /Copy wallet 1 address/);
+  assert.match(html, /Open wallet 1 address in explorer/);
+  assert.doesNotMatch(html, /Copied to clipboard/);
+});
+
+test("transaction signatures use the transaction explorer route and dark addresses preserve their theme", () => {
+  const html = renderToStaticMarkup(createElement(address.AddressDisplay, { value: "transaction-signature", kind: "tx", tone: "dark" }));
+  assert.match(html, /address-display is-dark/);
+  assert.match(html, /\/tx\/transaction-signature\?rpc=/);
+  assert.match(html, /Copy transaction signature/);
+  assert.doesNotMatch(html, /\/address\/transaction-signature/);
+});
+
+test("empty-state actions appear only when idle; loading and error states do not offer a misleading CTA", () => {
+  const action = createElement("button", { type: "button" }, "Connect Thru Wallet");
+  const render = extra => renderToStaticMarkup(createElement(app.ReadStateCard, { title: "Your ecosystem starts here", description: "Connect to view your own collection", icon: "wallet", action, ...extra }));
+  assert.match(render({}), /Connect Thru Wallet/);
+  assert.doesNotMatch(render({ loading: true }), /Connect Thru Wallet/);
+  assert.doesNotMatch(render({ tone: "error" }), /Connect Thru Wallet/);
+});
+
+test("the wallet wrapper renders no custom account popup or custody form", () => {
+  // WalletButton mounts its hosted iframe on the client; SSR only tests our wrapper.
+  const html = renderToStaticMarkup(createElement(ThruProvider, { config: { rpcUrl: "https://rpc.betanet.thru.org", iframeUrl: "https://app.tid.sh/embedded" } }, createElement(wallet.OfficialWalletControl)));
+  assert.match(html, /Official Thru Wallet control/);
+  assert.doesNotMatch(html, /wallet-popover|recovery phrase|Create a wallet|Import a wallet|local vault/i);
 });

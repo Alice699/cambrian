@@ -15,7 +15,13 @@ import {
 import { walletMetadata } from "@cambrian/wallet-core";
 import { claimFaucet, FaucetApiError } from "./faucet";
 import { activeThruAddress, noticeTone } from "./transaction-model";
-import { WalletChip } from "./components/WalletControl";
+import { OfficialWalletControl, ConnectedAccountSummary, ConnectWalletAction } from "./components/WalletControl";
+import { FaucetButton } from "./components/FaucetButton";
+import { AddressDisplay } from "./components/AddressDisplay";
+import { ReadStateCard } from "./components/ReadStateCard";
+import { UiIcon } from "./components/UiIcon";
+import type { FaucetStage } from "./presentation-model";
+export { ReadStateCard } from "./components/ReadStateCard";
 import { BirthStatus, FaucetStatus, TransactionStatusBadge, TransactionNotice, StatusIcon, explorerLink } from "./components/TransactionFeedback";
 import { useOrganismCollection, type OrganismReadStatus } from "./hooks/useOrganisms";
 import { loadPendingBirth, savePendingBirth, clearPendingBirth } from "./birth-receipts";
@@ -29,7 +35,6 @@ import { appConfig } from "./config";
 
 
 type Notice = "faucet" | "faucet-submitted" | "faucet-success" | "faucet-error" | "birth" | "birth-submitted" | "birth-success" | "birth-error" | null;
-type FaucetStage = "idle" | "preparing" | "requesting" | "confirming";
 type Route = "landing" | "dashboard" | "organisms" | "activity" | "learn";
 
 const FAUCET_BALANCE_POLL_INTERVAL_MS = 1_000;
@@ -161,11 +166,6 @@ function Sidebar({ activeRoute }: { activeRoute: Exclude<Route, "landing"> }) {
   );
 }
 
-function shortenAddress(address: string) {
-  return address.length > 14 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address;
-}
-
-
 
 
 type ActivityReadStatus = "idle" | "loading" | "ready" | "empty" | "needs-wallet" | "error";
@@ -236,33 +236,28 @@ function useAccountTransactions(refreshKey = 0, addressOverride?: string | null)
   return state.walletAddress === (address ?? null) ? state : { walletAddress: address ?? null, status: address ? "loading" : "needs-wallet", transactions: [], error: null };
 }
 
-export function ReadStateCard({ title, description, tone = "neutral", loading = false, onRetry }: { title: string; description: string; tone?: "neutral" | "error"; loading?: boolean; onRetry?: () => void }) {
-  return (
-    <div className={`data-state-card ${tone === "error" ? "is-error" : ""} ${loading ? "is-loading" : "is-empty"}`} role={tone === "error" ? "alert" : "status"} aria-busy={loading}>
-      <span className="read-state-icon" aria-hidden="true">{loading ? <StatusIcon tone="pending" spinning /> : tone === "error" ? <StatusIcon tone="error" /> : <svg viewBox="0 0 24 24"><path d="M12 3v4m0 10v4M3 12h4m10 0h4" /><circle cx="12" cy="12" r="5" /></svg>}</span>
-      <strong>{title}</strong>
-      <p>{description}</p>
-      {loading && <div className="read-skeletons" aria-hidden="true"><span className="skeleton" /><span className="skeleton" /><span className="skeleton" /></div>}
-      {tone === "error" && onRetry && <button className="read-state-retry" type="button" onClick={onRetry}>Retry read</button>}
-      {!loading && tone !== "error" && <a className="read-state-link" href="/app" onClick={event => navigateInternal("/app", event)}>Go to your ecosystem →</a>}
-    </div>
-  );
+function ReadStateAction({ status, kind, onRetry }: { status: OrganismReadStatus | ActivityReadStatus; kind: "organisms" | "activity"; onRetry?: () => void }) {
+  if (status === "needs-wallet") return <ConnectWalletAction />;
+  if (status !== "empty") return null;
+  if (kind === "organisms" && !appConfig.walletBirthEnabled) return <span className="read-state-paused"><UiIcon name="activity" />Birth paused · program upgrade pending</span>;
+  if (kind === "activity" && onRetry) return <button className="state-action is-secondary" type="button" onClick={onRetry}><UiIcon name="retry" />Refresh activity</button>;
+  return <a className="state-action is-secondary" href="/app" onClick={event => navigateInternal("/app", event)}>Open ecosystem<UiIcon name="arrow" /></a>;
 }
 
 function organismStatusCopy(status: OrganismReadStatus, error: string | null) {
-  if (status === "needs-wallet") return ["Connect your Thru Wallet", "Your organisms belong to your selected account. Connect a wallet to view your collection."] as const;
+  if (status === "needs-wallet") return ["Your ecosystem starts here", "Connect Thru Wallet to see the organisms owned by your account."] as const;
   if (status === "not-configured") return ["Deployment pending", "Set the fresh Cambrian program ID before querying organism accounts."] as const;
-  if (status === "loading" || status === "idle") return ["Loading your organisms", "Checking the on-chain controller for your selected Thru account."] as const;
-  if (status === "empty") return ["Your collection starts here", appConfig.walletBirthEnabled ? "This wallet has no organisms yet. Birth an organism to bring it to life." : "No organisms are controlled by this wallet yet. Wallet-owned Birth is awaiting the program upgrade; existing organisms remain on-chain."] as const;
-  if (status === "error") return ["Read failed", error ?? "The Betanet read request could not be completed."] as const;
+  if (status === "loading" || status === "idle") return ["Finding your organisms", "Reading live Betanet state for the account you selected."] as const;
+  if (status === "empty") return ["No organisms yet", "Organisms controlled by this account will appear here. Existing on-chain records are unchanged."] as const;
+  if (status === "error") return ["Couldn't load organisms", error ?? "Betanet is temporarily unavailable. Retry the read when you're ready."] as const;
   return ["No organism data", "Create an organism through the wallet to make state available here."] as const;
 }
 
 function activityStatusCopy(status: ActivityReadStatus, error: string | null) {
-  if (status === "needs-wallet") return ["Connect a wallet", "Account activity appears after a wallet address is selected."] as const;
-  if (status === "loading" || status === "idle") return ["Reading account trail", "Loading transactions from the Thru Betanet RPC."] as const;
-  if (status === "empty") return ["No transactions yet", "This account has no transaction records returned by the Betanet query."] as const;
-  if (status === "error") return ["Read failed", error ?? "The account activity request could not be completed."] as const;
+  if (status === "needs-wallet") return ["A clear trail, just for you", "Connect your wallet to see its transactions and confirmation status."] as const;
+  if (status === "loading" || status === "idle") return ["Reading your activity", "Fetching the latest transaction records from Thru Betanet."] as const;
+  if (status === "empty") return ["No transactions yet", "Your account's transactions will appear here when Betanet returns them."] as const;
+  if (status === "error") return ["Couldn't load activity", error ?? "The account read is temporarily unavailable. No transaction was sent."] as const;
   return ["No activity data", "Select a wallet account to read its transaction trail."] as const;
 }
 
@@ -322,15 +317,16 @@ function OrganismsPanel({ organism, status, error, onRetry }: { organism?: Cambr
 
   return (
     <section className="organisms-panel" id="organisms" aria-labelledby="organisms-title">
-      <p className="panel-label">YOUR ORGANISMS</p>
+      <p className="panel-label" id="organisms-title">YOUR ORGANISMS</p>
       {organism && state ? (
         <>
-          <h2 id="organisms-title">Cambrian organism</h2>
-          <p className="organism-meta">GENERATION {state.generation}&nbsp; / &nbsp;PULSES {state.pulseCount.toString()}&nbsp; / &nbsp;{shortenAddress(organism.address)}</p>
+          <h2>Cambrian organism</h2>
+          <p className="organism-meta">GENERATION {state.generation}&nbsp; / &nbsp;PULSES {state.pulseCount.toString()}</p>
+          <AddressDisplay value={organism.address} label="Organism" compact />
           <p className="organism-description">Live account data read from the Cambrian program on Thru Betanet. The organism viewer will become state-driven after the read model is stable.</p>
         </>
       ) : (
-        <ReadStateCard title={statusCopy[0]} description={statusCopy[1]} tone={status === "error" ? "error" : "neutral"} loading={status === "loading" || status === "idle"} onRetry={onRetry} />
+        <ReadStateCard title={statusCopy[0]} description={statusCopy[1]} tone={status === "error" ? "error" : "neutral"} loading={status === "loading" || status === "idle"} onRetry={onRetry} icon={status === "needs-wallet" ? "wallet" : "organism"} action={["needs-wallet", "empty"].includes(status) ? <ReadStateAction status={status} kind="organisms" onRetry={onRetry} /> : undefined} />
       )}
       {organism && <img className="organisms-thumbnail" src={organismsThumbnailAsset} width="82" height="82" alt="Cambrian organism thumbnail" />}
     </section>
@@ -347,12 +343,13 @@ function ActivityPanel({ transactions, status, error, onRetry }: { transactions:
         <div className="activity-row" key={transaction.signature || transaction.program + "-" + index}>
           <div>
             <strong>Transaction</strong>
-            <span>{transaction.signature ? shortenAddress(transaction.signature) : "Signature unavailable"}&nbsp; / &nbsp;{transaction.slot ? "slot " + transaction.slot.toString() : "pending slot"}</span>
+            {transaction.signature ? <AddressDisplay value={transaction.signature} kind="tx" compact /> : <span>Signature unavailable</span>}
+            <small>{transaction.slot ? "Slot " + transaction.slot.toString() : "Slot pending"}</small>
           </div>
           <TransactionStatusBadge status={transaction.status} vmError={transaction.vmError} />
         </div>
       )) : (
-        <ReadStateCard title={statusCopy[0]} description={statusCopy[1]} tone={status === "error" ? "error" : "neutral"} loading={status === "loading" || status === "idle"} onRetry={onRetry} />
+        <ReadStateCard title={statusCopy[0]} description={statusCopy[1]} tone={status === "error" ? "error" : "neutral"} loading={status === "loading" || status === "idle"} onRetry={onRetry} icon={status === "needs-wallet" ? "wallet" : "activity"} action={["needs-wallet", "empty"].includes(status) ? <ReadStateAction status={status} kind="activity" onRetry={onRetry} /> : undefined} />
       )}
     </section>
   );
@@ -682,13 +679,12 @@ function DashboardContent() {
           <p className="page-label">OVERVIEW&nbsp; / &nbsp;CAMBRIAN LIFEFORM</p>
           <h1>Your ecosystem</h1>
         </div>
-        <div className="header-actions">
-          <button className="faucet-button" type="button" onClick={faucetPending ? checkFaucetBalance : handleFaucet} disabled={!activeAddress || faucetStage !== "idle"} aria-busy={faucetStage !== "idle"}>
-            {faucetStage === "preparing" ? "Preparing..." : faucetStage === "confirming" ? "Confirming..." : faucetStage === "requesting" ? "Requesting..." : faucetPending ? "Check faucet status" : "Get faucet"}
-          </button>
-          <WalletChip refreshKey={balanceRefreshKey} onFaucet={handleFaucet} faucetBusy={faucetStage !== "idle" || faucetPending} />
+        <div className="header-actions" id="account-controls">
+          <FaucetButton stage={faucetStage} pending={faucetPending} connected={Boolean(activeAddress)} onClick={faucetPending ? checkFaucetBalance : handleFaucet} />
+          <OfficialWalletControl refreshKey={balanceRefreshKey} />
         </div>
       </header>
+      <ConnectedAccountSummary />
 
       <EcosystemStage onBirth={handleBirth} birthStage={birthStage} birthBusy={birthBusy} birthPending={birthPending} organism={organism} readStatus={organismRead.status} />
       {!appConfig.walletBirthEnabled && <div className="ownership-upgrade-note" role="status"><StatusIcon tone="pending" /><div><strong>Wallet ownership upgrade pending</strong><p>New Births are paused until the updated program is deployed. Existing organisms remain on-chain; legacy fee-payer-controlled organisms require a reviewed ownership transfer.</p></div><a href={explorerLink("address", appConfig.programId)} target="_blank" rel="noreferrer">View program ↗</a></div>}
@@ -720,10 +716,10 @@ function DashboardContent() {
 
 function InnerPageHeader({ label, title, description, action }: { label: string; title: string; description: string; action?: ReactNode }) {
   return (
-    <header className="inner-page-header">
+    <><header className="inner-page-header">
       <div><p className="page-label">{label}</p><h1>{title}</h1><p>{description}</p></div>
-      <div className="inner-page-action">{action}<WalletChip /></div>
-    </header>
+      <div className="inner-page-action">{action}<OfficialWalletControl /></div>
+    </header><ConnectedAccountSummary /></>
   );
 }
 
@@ -745,13 +741,13 @@ function OrganismsPage() {
         <>
           <section className="organism-focus-card" aria-labelledby="focus-organism-title">
             <div>
-              <p className="panel-label">SELECTED ORGANISM / {shortenAddress(organism.address)}</p>
+              <p className="panel-label">SELECTED ORGANISM</p>
               <h2 id="focus-organism-title">Cambrian organism</h2>
               <p>Live state decoded from the account data owned by the configured Cambrian program.</p>
               <div className="focus-meta">
                 <span>GENERATION <b>{organism.state.generation}</b></span>
                 <span>PULSES <b>{organism.state.pulseCount.toString()}</b></span>
-                <span>ACCOUNT <b>{shortenAddress(organism.address)}</b></span>
+                <AddressDisplay value={organism.address} label="Organism" compact tone="dark" />
               </div>
             </div>
             <div className="focus-organism-view"><img src={heroOrganismAsset} width="210" height="190" alt="Cambrian organism state viewer" /><span>3D VIEWER / READ MODEL</span></div>
@@ -764,7 +760,7 @@ function OrganismsPage() {
           <section className="collection-note"><p className="panel-label">NEXT TRACE</p><h2>Every pulse leaves a readable mark.</h2><p>Use Activity to inspect the account trail. New actions remain behind wallet approval and receipt confirmation.</p></section>
         </>
       ) : (
-        <ReadStateCard title={statusCopy[0]} description={statusCopy[1]} tone={organismRead.status === "error" ? "error" : "neutral"} loading={organismRead.status === "loading" || organismRead.status === "idle"} onRetry={() => setRefreshKey(key => key + 1)} />
+        <ReadStateCard title={statusCopy[0]} description={statusCopy[1]} tone={organismRead.status === "error" ? "error" : "neutral"} loading={organismRead.status === "loading" || organismRead.status === "idle"} onRetry={() => setRefreshKey(key => key + 1)} icon={organismRead.status === "needs-wallet" ? "wallet" : "organism"} action={["needs-wallet", "empty"].includes(organismRead.status) ? <ReadStateAction status={organismRead.status} kind="organisms" /> : undefined} />
       )}
     </DashboardFrame>
   );
@@ -778,7 +774,7 @@ function ActivityTimeline({ transactions }: { transactions: CambrianTransactionS
           <div className="timeline-marker"><TransactionStatusBadge status={transaction.status} vmError={transaction.vmError} /></div>
           <div className="timeline-copy">
             <strong>Transaction</strong>
-            <span>{transaction.signature ? shortenAddress(transaction.signature) : "Signature unavailable"} / {shortenAddress(transaction.program)}</span>
+            {transaction.signature ? <AddressDisplay value={transaction.signature} kind="tx" compact /> : <span>Signature unavailable</span>}
             <small>{transaction.slot ? "Slot " + transaction.slot.toString() : "Slot unavailable"} / {transaction.instructionBytes} instruction bytes</small>
           </div>
           <a href={transaction.signature ? explorerLink("tx", transaction.signature) : explorerLink("address", transaction.program)} target="_blank" rel="noreferrer">Open explorer</a>
@@ -798,7 +794,7 @@ function ActivityPage() {
       <InnerPageHeader label="ACTIVITY / ON-CHAIN TRAIL" title="A clear chain of events" description="Every account transaction is read from Thru Betanet and kept visible without inventing confirmation states." action={<span className="connected-badge"><i /> {activityRead.transactions.length > 0 ? activityRead.transactions.length + " READ" : "RPC READ"}</span>} />
       <section className="activity-page-card">
         <div className="activity-card-heading"><div><p className="panel-label">RECENT ACTIVITY</p><h2>What happened next</h2></div><span>BETANET / LIVE READ</span></div>
-        {activityRead.transactions.length > 0 ? <ActivityTimeline transactions={activityRead.transactions} /> : <ReadStateCard title={statusCopy[0]} description={statusCopy[1]} tone={activityRead.status === "error" ? "error" : "neutral"} loading={activityRead.status === "loading" || activityRead.status === "idle"} onRetry={() => setRefreshKey(key => key + 1)} />}
+        {activityRead.transactions.length > 0 ? <ActivityTimeline transactions={activityRead.transactions} /> : <ReadStateCard title={statusCopy[0]} description={statusCopy[1]} tone={activityRead.status === "error" ? "error" : "neutral"} loading={activityRead.status === "loading" || activityRead.status === "idle"} onRetry={() => setRefreshKey(key => key + 1)} icon={activityRead.status === "needs-wallet" ? "wallet" : "activity"} action={["needs-wallet", "empty"].includes(activityRead.status) ? <ReadStateAction status={activityRead.status} kind="activity" onRetry={() => setRefreshKey(key => key + 1)} /> : undefined} />}
       </section>
       <section className="trail-callout"><span>ON-CHAIN TRANSPARENCY</span><p>Nothing disappears behind a spinner. When a transaction is submitted, its state and explorer trail remain visible.</p><a href="https://scan.thru.org/" target="_blank" rel="noreferrer">Open Thru explorer</a></section>
     </DashboardFrame>

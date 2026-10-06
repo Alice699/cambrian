@@ -1,6 +1,8 @@
 import type { BirthTransactionUpdate, CambrianTransactionSummary } from "@cambrian/sdk";
 import { birthPresentation, type FeedbackTone } from "../transaction-model";
-import { appConfig } from "../config";
+import { AddressDisplay } from "./AddressDisplay";
+import { explorerLink } from "../explorer";
+export { explorerLink } from "../explorer";
 
 export function StatusIcon({ tone, spinning = false }: { tone: FeedbackTone; spinning?: boolean }) {
   return <span className={`status-icon is-${tone} ${spinning ? "is-spinning" : ""}`} aria-hidden="true">
@@ -8,10 +10,6 @@ export function StatusIcon({ tone, spinning = false }: { tone: FeedbackTone; spi
       {tone === "success" ? <path d="m6 12 4 4 8-8" /> : tone === "error" ? <><path d="m8 8 8 8m0-8-8 8" /></> : <><circle cx="12" cy="12" r="8" opacity=".25" /><path d="M12 4a8 8 0 0 1 8 8" /></>}
     </svg>
   </span>;
-}
-
-export function explorerLink(kind: "tx" | "address", value: string) {
-  return `${appConfig.explorerUrl.replace(/\/$/, "")}/${kind}/${encodeURIComponent(value)}?rpc=${encodeURIComponent(appConfig.rpcUrl)}`;
 }
 
 export function TransactionStatusBadge({ status, vmError }: {
@@ -54,7 +52,7 @@ export function BirthStatus({ update, account, onCheck, busy = false }: {
       })}
     </ol>
     <div className="birth-progress-footer">
-      <span>{account ? `Account ${account.slice(0, 8)}…${account.slice(-4)}` : "Your wallet approves every transaction"}</span>
+      {account ? <AddressDisplay value={account} label="Account" compact /> : <span>Your wallet approves every transaction</span>}
       <div className="birth-progress-links">
         {update.signature && <a href={explorerLink("tx", update.signature)} target="_blank" rel="noreferrer">View transaction ↗</a>}
         {update.organism && <a href={explorerLink("address", update.organism.address)} target="_blank" rel="noreferrer">View organism ↗</a>}

@@ -13,6 +13,7 @@ import { appConfig } from "./config";
 import "./styles.css";
 import "./wallet.css";
 import "./feedback.css";
+import "./dashboard-polish.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

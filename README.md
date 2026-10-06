@@ -7,13 +7,14 @@ and account activity, and makes the organism transaction lifecycle visible.
 
 ## Features
 
-- Official Thru Wallet connection and account switching
-- Native THRU balance and token logo
+- Official Thru-hosted wallet button and account menu, with no custom wallet popup
+- Live native THRU balance in the official wallet control
 - Organism discovery filtered by the selected wallet's on-chain controller
 - Loading skeletons, clear empty states, and read-only retry actions
 - Animated transaction steps: approval → submission → confirmation → readable state
 - Green confirmed, yellow pending, and red failed feedback with text and icons
 - Faucet API with validation, cooldown, rate limits, and idempotent claims
+- Compact public addresses with full-value copy and network-aware explorer links
 
 Cambrian no longer offers a local wallet. Previously stored local vaults are
 not erased by this change; the removed source remains recoverable in Git history.

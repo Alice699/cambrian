@@ -3,6 +3,7 @@ import test from "node:test";
 import { activeThruAddress, birthPresentation, noticeTone, type BirthStage } from "../apps/web/src/transaction-model.ts";
 import { clearPendingBirth, loadPendingBirth, savePendingBirth } from "../apps/web/src/birth-receipts.ts";
 import type { BirthTransactionResult } from "../packages/cambrian-sdk/src/transaction-service.ts";
+import { copyPublicValue, faucetButtonPresentation, officialBalanceLabel, shortPublicAddress, type FaucetStage } from "../apps/web/src/presentation-model.ts";
 
 test("every unfinished Birth stage is yellow/pending; only completed read is green", () => {
   for (const stage of ["connecting", "preparing", "awaiting-approval", "signed", "submitting", "submitted", "syncing"] as BirthStage[]) {
@@ -66,4 +67,60 @@ test("malformed and cross-wallet receipts cannot become active transaction state
   storage.setItem(key, "{not-json"); assert.equal(loadPendingBirth(storage, "program-A", "account-A"), null);
   storage.setItem(key, JSON.stringify({ ...receipt, prepared: { ...receipt.prepared, intent: { ...receipt.prepared.intent, walletAddress: "account-B" } } }));
   assert.equal(loadPendingBirth(storage, "program-A", "account-A"), null);
+});
+
+test("public addresses keep recognizable ends without altering short values", () => {
+  const address = "taABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  assert.equal(shortPublicAddress(address), "taABCDEF…456789");
+  assert.equal(shortPublicAddress("account-A"), "account-A");
+  assert.equal(shortPublicAddress(address, 6, 4), "taABCD…6789");
+});
+
+test("the official balance label keeps integer precision and never invents an unavailable balance", () => {
+  assert.equal(officialBalanceLabel("2000000000000000001"), "2,000,000,000,000,000,001 THRU");
+  assert.equal(officialBalanceLabel(100n), "100 THRU");
+  assert.equal(officialBalanceLabel("0"), "0 THRU");
+  assert.equal(officialBalanceLabel(null), undefined);
+  for (const invalid of ["", "NaN", "Infinity", "-1", "100.5"]) assert.equal(officialBalanceLabel(invalid), undefined);
+});
+
+test("faucet presentation makes the selected-wallet requirement explicit", () => {
+  const disconnected = faucetButtonPresentation("idle", false, false);
+  assert.equal(disconnected.hint, "Connect a wallet first");
+  assert.match(disconnected.description, /Connect Thru Wallet/);
+  const connected = faucetButtonPresentation("idle", false, true);
+  assert.equal(connected.label, "Get test THRU");
+  assert.match(connected.description, /selected wallet/);
+  assert.match(connected.description, /no monetary value/);
+});
+
+test("every running faucet phase is pending and a delayed claim becomes a read-only check", () => {
+  for (const stage of ["preparing", "requesting", "confirming"] as FaucetStage[]) {
+    const state = faucetButtonPresentation(stage, false, true);
+    assert.equal(state.busy, true);
+    assert.equal(state.tone, "pending");
+    assert.match(state.hint, /no repeat claim/);
+  }
+  const delayed = faucetButtonPresentation("idle", true, true);
+  assert.equal(delayed.busy, false);
+  assert.equal(delayed.tone, "pending");
+  assert.equal(delayed.label, "Check balance");
+  assert.match(delayed.description, /without requesting funds again/);
+});
+
+test("clipboard copies the entire public value and reports success only after the write completes", async () => {
+  const address = "taABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let copied = "", complete = false, release!: () => void;
+  const write = new Promise<void>(resolve => { release = resolve; });
+  const result = copyPublicValue(address, { writeText: async value => { copied = value; await write; } }).then(() => { complete = true; });
+  assert.equal(copied, address);
+  assert.notEqual(copied, shortPublicAddress(address));
+  assert.equal(complete, false);
+  release(); await result;
+  assert.equal(complete, true);
+});
+
+test("unavailable or rejected clipboard writes cannot report success", async () => {
+  await assert.rejects(copyPublicValue("account-A"), /Clipboard unavailable/);
+  await assert.rejects(copyPublicValue("account-A", { writeText: async () => { throw new Error("Permission denied"); } }), /Permission denied/);
 });
