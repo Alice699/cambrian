@@ -105,7 +105,14 @@ export async function listCambrianOrganisms(
 
   for (const account of response.accounts) {
     try {
-      organisms.push(decodeOrganismAccount(account));
+      // Betanet list responses can omit account data even with FULL requested.
+      // Hydrate the listed address instead of treating an existing organism as missing.
+      const complete = account.data?.data?.length
+        ? account
+        : await client.accounts.get(account.address, { view: AccountView.FULL });
+      const organism = decodeOrganismAccount(complete);
+      if (organism.owner !== config.programId) throw new Error("organism account is not owned by the Cambrian program");
+      organisms.push(organism);
     } catch (error) {
       unreadableAccounts.push({
         address: account.address.toThruFmt(),

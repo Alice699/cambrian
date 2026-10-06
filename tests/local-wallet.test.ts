@@ -1,11 +1,34 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Pubkey, Signature, keys, verifyMessage, type Thru } from "@thru/sdk";
+import { selectActiveWallet } from "../apps/web/src/wallet-selection.ts";
 import {
   LocalWalletController,
   LocalWalletSession,
   MemoryLocalWalletStorage,
 } from "../packages/wallet-core/src/local-wallet.ts";
+
+test("connected Thru Wallet wins over an unlocked local wallet for balance and faucet routing", () => {
+  assert.deepEqual(selectActiveWallet(true, "thru-account", "local-account"), {
+    provider: "thru", address: "thru-account",
+  });
+});
+
+test("a stale disconnected Thru account cannot receive a local wallet's faucet request", () => {
+  assert.deepEqual(selectActiveWallet(false, "stale-thru-account", "local-account"), {
+    provider: "local", address: "local-account",
+  });
+});
+
+test("locked local wallets and disconnected Thru Wallet have no active faucet target", () => {
+  assert.equal(selectActiveWallet(false, "stale-thru-account", null), null);
+});
+
+test("Thru Wallet remains selectable when the local vault is locked", () => {
+  assert.deepEqual(selectActiveWallet(true, "thru-account", null), {
+    provider: "thru", address: "thru-account",
+  });
+});
 
 test("creates and unlocks an encrypted local Thru wallet", async () => {
   const storage = new MemoryLocalWalletStorage();
@@ -132,10 +155,12 @@ test("local transaction signer decodes Thru intent data before using the SDK bui
     index: 0,
   };
   let capturedInstructionData: Uint8Array | undefined;
+  let capturedStateUnits: number | undefined;
   const fakeClient = {
     transactions: {
-      buildAndSign: async (options: { instructionData?: Uint8Array }) => {
+      buildAndSign: async (options: { instructionData?: Uint8Array; header?: { stateUnits?: number } }) => {
         capturedInstructionData = options.instructionData;
+        capturedStateUnits = options.header?.stateUnits;
         return { rawTransaction: new Uint8Array([0xaa, 0xbb]) };
       },
     },
@@ -149,9 +174,11 @@ test("local transaction signer decodes Thru intent data before using the SDK bui
     walletAddress: account.address,
     programAddress: account.address,
     instructionData: btoa(binary),
+    stateUnits: 1,
   });
 
   assert.deepEqual(capturedInstructionData, rawIntentData);
+  assert.equal(capturedStateUnits, 1);
   assert.equal(signed, btoa(String.fromCharCode(0xaa, 0xbb)));
   session.lock();
   await assert.rejects(() => session.signMessage(new Uint8Array([1])), /Local wallet is locked/);

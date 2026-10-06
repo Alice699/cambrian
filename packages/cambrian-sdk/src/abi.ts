@@ -1,3 +1,5 @@
+import { CAMBRIAN_ORGANISM_MAGIC, CAMBRIAN_ORGANISM_VERSION } from "./constants.js";
+
 const BYTES32_LENGTH = 32;
 
 export interface BirthInstructionInput {
@@ -90,12 +92,16 @@ export interface CambrianOrganismState {
 export function decodeCambrianOrganism(bytes: Uint8Array): CambrianOrganismState {
   if (bytes.length < 264) throw new Error(`organism account must be at least 264 bytes, got ${bytes.length}`);
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const magic = view.getUint32(0, true);
+  const version = view.getUint8(4);
+  if (magic !== CAMBRIAN_ORGANISM_MAGIC) throw new Error("organism account has an invalid Cambrian magic header");
+  if (version !== CAMBRIAN_ORGANISM_VERSION) throw new Error(`unsupported Cambrian organism version ${version}`);
   const copy = (offset: number, length: number) => bytes.slice(offset, offset + length);
   const u64 = (offset: number) => view.getBigUint64(offset, true);
 
   return {
-    magic: view.getUint32(0, true),
-    version: view.getUint8(4),
+    magic,
+    version,
     status: view.getUint8(5),
     generation: view.getUint16(6, true),
     controller: copy(8, 32),

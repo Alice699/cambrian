@@ -1,5 +1,6 @@
 import { createThruClient, type Thru } from "@thru/sdk/client";
 import { StateProofType } from "@thru/sdk/proto";
+import { buildWalletAccountContext } from "@thru/programs/passkey-manager";
 import type { ThruTransactionIntent } from "@thru/wallet/react";
 import { defaultCambrianConfig, type CambrianConfig } from "@cambrian/config";
 import {
@@ -8,12 +9,14 @@ import {
   randomBytes32,
   utf8ToBytes32,
 } from "./abi.js";
-import { CAMBRIAN_INSTRUCTION_ABI_NAME } from "./constants.js";
+import { CAMBRIAN_BIRTH_STATE_UNITS, CAMBRIAN_INSTRUCTION_ABI_NAME } from "./constants.js";
 
 export interface BirthIntentOptions {
   walletAddress: string;
   seed: string;
   entropy?: Uint8Array;
+  /** Hosted wallet calls are wrapped by passkey-manager, unlike direct local signing. */
+  signingMode?: "direct" | "thru-wallet";
 }
 
 export interface PreparedBirthIntent {
@@ -48,8 +51,18 @@ export async function prepareBirthIntent(
     address: organismAddress,
     proofType: StateProofType.CREATING,
   });
+  const organismBytes = client.helpers.createPubkey(organismAddress).toBytes();
+  // Only build instruction indices here. Thru Wallet still chooses the fee payer,
+  // constructs the final transaction, and returns the canonical signed bytes.
+  const walletContext = options.signingMode === "thru-wallet"
+    ? buildWalletAccountContext({
+      walletAddress: options.walletAddress,
+      readWriteAccounts: [organismBytes],
+      readOnlyAccounts: [client.helpers.createPubkey(config.programId).toBytes()],
+    })
+    : null;
   const instructionData = encodeBirthInstruction({
-    organismAccountIndex: 2,
+    organismAccountIndex: walletContext?.getAccountIndex(organismBytes) ?? 2,
     seed,
     entropy,
     proof: stateProof.proof,
@@ -64,7 +77,9 @@ export async function prepareBirthIntent(
       walletAddress: options.walletAddress,
       programAddress: config.programId,
       instructionData: bytesToBase64(instructionData),
-      readWriteAddresses: [organismAddress],
+      stateUnits: CAMBRIAN_BIRTH_STATE_UNITS,
+      readWriteAddresses: walletContext?.readWriteAddresses ?? [organismAddress],
+      ...(walletContext ? { readOnlyAddresses: walletContext.readOnlyAddresses } : {}),
       review: {
         appName: "Cambrian",
         programAddress: config.programId,

@@ -6,13 +6,18 @@ import {
   listCambrianOrganisms,
   readAccountSnapshot,
   executeBirthTransaction,
+  confirmBirthTransaction,
+  BirthExecutionError,
   prepareNativeTransferReview,
   type CambrianOrganismRecord,
   type CambrianTransactionSummary,
   type BirthTransactionStage,
+  type BirthTransactionUpdate,
+  type BirthTransactionResult,
 } from "@cambrian/sdk";
 import { LocalWalletController, walletMetadata } from "@cambrian/wallet-core";
 import { claimFaucet, FaucetApiError } from "./faucet";
+import { selectActiveWallet } from "./wallet-selection";
 import markAsset from "./assets/cambrian-mark.svg";
 import footerMarkAsset from "./assets/cambrian-mark-light.svg";
 import thruLogoAsset from "./assets/thru-logo.png";
@@ -182,6 +187,10 @@ function WalletChip({ refreshKey = 0, onFaucet, faucetBusy = false }: WalletChip
   const [open, setOpen] = useState(false);
   const controlRef = useRef<HTMLDivElement>(null);
   const popoverRef = useRef<HTMLElement>(null);
+  const localAddress = localWallet.status === "unlocked" ? localWallet.account?.address : undefined;
+  const activeWallet = selectActiveWallet(isConnected, selectedAccount?.address, localAddress);
+  const address = activeWallet?.address;
+  const usingLocalWallet = activeWallet?.provider === "local";
 
   useEffect(() => {
     setWalletError(sdkError?.message ?? null);
@@ -208,7 +217,6 @@ function WalletChip({ refreshKey = 0, onFaucet, faucetBusy = false }: WalletChip
 
   useEffect(() => {
     let active = true;
-    const address = localWallet.status === "unlocked" ? localWallet.account?.address : selectedAccount?.address;
     if (!address || !thru) {
       setBalance(null);
       return () => {
@@ -228,21 +236,20 @@ function WalletChip({ refreshKey = 0, onFaucet, faucetBusy = false }: WalletChip
     return () => {
       active = false;
     };
-  }, [localWallet.account?.address, localWallet.status, selectedAccount?.address, thru, refreshKey]);
+  }, [address, thru, refreshKey]);
 
-  const localAddress = localWallet.status === "unlocked" ? localWallet.account?.address : undefined;
   const activeLocalWallet = localWallet.wallets.find((wallet) => wallet.id === localWallet.activeWalletId);
-  const label = localAddress
-    ? activeLocalWallet?.name ?? shortenAddress(localAddress)
-    : selectedAccount && isConnected
-      ? shortenAddress(selectedAccount.address)
+  const label = usingLocalWallet && address
+    ? activeLocalWallet?.name ?? shortenAddress(address)
+    : address
+      ? shortenAddress(address)
       : localWallet.status === "locked" ? "Unlock wallet" : "Open wallet";
   const detail = walletError
     ? walletError
-    : localAddress
+    : usingLocalWallet
       ? balance === null ? "Reading local balance..." : `Self-custody · ${balance} THRU`
-      : selectedAccount
-      ? balance === null ? "Reading balance…" : `Balance ${balance} units`
+      : address
+      ? balance === null ? "Reading balance…" : `Thru Wallet · ${balance} THRU`
       : localWallet.status === "locked" ? "Encrypted vault on this device" : "Create or connect account";
 
   return (
@@ -275,7 +282,7 @@ interface OrganismReadState {
   error: string | null;
 }
 
-function useOrganismCollection(): OrganismReadState {
+function useOrganismCollection(refreshKey = 0, createdOrganism?: CambrianOrganismRecord | null): OrganismReadState {
   const { thru } = useThru();
   const [state, setState] = useState<OrganismReadState>({
     status: appConfig.programId ? "idle" : "not-configured",
@@ -301,13 +308,16 @@ function useOrganismCollection(): OrganismReadState {
       };
     }
 
-    setState({ status: "loading", organisms: [], unreadableAccounts: [], error: null });
+    setState((current) => ({ ...current, status: "loading", error: null }));
     listCambrianOrganisms(thru, appConfig)
       .then((result) => {
         if (!active) return;
+        const organisms = createdOrganism
+          ? [createdOrganism, ...result.organisms.filter((account) => account.address !== createdOrganism.address)]
+          : result.organisms;
         setState({
-          status: result.organisms.length > 0 ? "ready" : "empty",
-          organisms: result.organisms,
+          status: organisms.length > 0 ? "ready" : "empty",
+          organisms,
           unreadableAccounts: result.unreadableAccounts,
           error: null,
         });
@@ -315,8 +325,8 @@ function useOrganismCollection(): OrganismReadState {
       .catch((error) => {
         if (!active) return;
         setState({
-          status: "error",
-          organisms: [],
+          status: createdOrganism ? "ready" : "error",
+          organisms: createdOrganism ? [createdOrganism] : [],
           unreadableAccounts: [],
           error: error instanceof Error ? error.message : "Could not read Cambrian organisms",
         });
@@ -325,9 +335,12 @@ function useOrganismCollection(): OrganismReadState {
     return () => {
       active = false;
     };
-  }, [thru]);
+  }, [thru, refreshKey, createdOrganism]);
 
-  return state;
+  return createdOrganism ? {
+    ...state,
+    organisms: [createdOrganism, ...state.organisms.filter((account) => account.address !== createdOrganism.address)],
+  } : state;
 }
 
 type ActivityReadStatus = "idle" | "loading" | "ready" | "empty" | "needs-wallet" | "error";
@@ -338,11 +351,14 @@ interface ActivityReadState {
   error: string | null;
 }
 
-function useAccountTransactions(): ActivityReadState {
+function useAccountTransactions(refreshKey = 0, addressOverride?: string | null): ActivityReadState {
   const { thru } = useThru();
-  const { selectedAccount } = useWallet();
+  const { selectedAccount, isConnected } = useWallet();
   const localWallet = useLocalWallet();
-  const address = localWallet.status === "unlocked" ? localWallet.account?.address : selectedAccount?.address;
+  const address = addressOverride !== undefined
+    ? addressOverride
+    : selectActiveWallet(isConnected, selectedAccount?.address,
+      localWallet.status === "unlocked" ? localWallet.account?.address : null)?.address;
   const [state, setState] = useState<ActivityReadState>({
     status: address ? "idle" : "needs-wallet",
     transactions: [],
@@ -388,7 +404,7 @@ function useAccountTransactions(): ActivityReadState {
     return () => {
       active = false;
     };
-  }, [address, localWallet.status, thru]);
+  }, [address, localWallet.status, thru, refreshKey]);
 
   return state;
 }
@@ -421,31 +437,82 @@ function activityStatusCopy(status: ActivityReadStatus, error: string | null) {
 
 function birthStageLabel(stage: BirthTransactionStage | null | undefined) {
   if (!stage) return "Birth new organism";
-  if (stage === "awaiting-approval") return "Approve in wallet";
+  if (stage === "connecting") return "Connect Thru Wallet";
+  if (stage === "awaiting-approval") return "Approve in Thru Wallet";
   if (stage === "preparing") return "Preparing birth";
   if (stage === "signed") return "Wallet approved";
   if (stage === "submitting") return "Submitting birth";
   if (stage === "submitted") return "Birth submitted";
+  if (stage === "syncing") return "Reading organism";
   if (stage === "confirmed") return "Birth confirmed";
   return "Birth failed";
 }
 
-function EcosystemStage({ onBirth, birthStage }: { onBirth: () => void; birthStage?: BirthTransactionStage | null }) {
+function EcosystemStage({ onBirth, birthStage, birthBusy, birthPending, organism }: {
+  onBirth: () => void;
+  birthStage?: BirthTransactionStage | null;
+  birthBusy: boolean;
+  birthPending: boolean;
+  organism?: CambrianOrganismRecord;
+}) {
   return (
     <section className="ecosystem-stage" aria-labelledby="ecosystem-title">
       <div className="stage-copy">
         <p className="stage-label">ON-CHAIN LIFEFORM</p>
-        <h2 id="ecosystem-title">One organism is alive.</h2>
-        <p className="stage-description">Pulse it, watch it mutate, and keep its state anchored to Thru.</p>
-        <p className="stage-meta">LAST PULSE&nbsp; / &nbsp;18 SLOTS AGO</p>
+        <h2 id="ecosystem-title">{organism ? "Your organism is alive." : "Birth your first organism."}</h2>
+        <p className="stage-description">{organism ? "Live organism state, read from Thru Betanet." : "Approve a Birth in Thru Wallet to bring your first organism on-chain."}</p>
+        <p className="stage-meta">{organism ? `BORN / SLOT ${organism.state.bornSlot.toString()}` : "THRU BETANET / AWAITING FIRST BIRTH"}</p>
       </div>
       <div className="stage-viewer">
         <img src={heroOrganismAsset} width="210" height="190" alt="Cambrian organism viewer" />
         <p>3D VIEWER&nbsp; / &nbsp;PHASE 1</p>
       </div>
-      <button className="birth-button" type="button" onClick={onBirth} disabled={Boolean(birthStage)} aria-live="polite">
-        {birthStageLabel(birthStage)}
+      <button className="birth-button" type="button" onClick={onBirth} disabled={birthBusy} aria-busy={birthBusy} aria-live="polite">
+        {birthBusy ? birthStageLabel(birthStage) : birthPending ? "Check Birth status" : birthStageLabel(null)}
       </button>
+    </section>
+  );
+}
+
+function explorerLink(kind: "tx" | "address", value: string) {
+  return `${appConfig.explorerUrl.replace(/\/$/, "")}/${kind}/${encodeURIComponent(value)}?rpc=${encodeURIComponent(appConfig.rpcUrl)}`;
+}
+
+function BirthStatus({ update, account }: { update: BirthTransactionUpdate | null; account: string | null }) {
+  if (!update) return null;
+  const stage = update.stage;
+  const step = stage === "confirmed" ? 4 : stage === "syncing" ? 3
+    : stage === "submitted" ? 2 : stage === "signed" || stage === "submitting" ? 1 : 0;
+  const copy: Record<BirthTransactionStage, [string, string]> = {
+    connecting: ["Connect Thru Wallet", "Complete the connection request in Thru Wallet to continue."],
+    preparing: ["Preparing your Birth", "Checking the new organism address before wallet approval."],
+    "awaiting-approval": ["Confirm in Thru Wallet", "Review the Birth request and approve it in your wallet."],
+    signed: ["Wallet approved", "Your approved transaction is ready to be submitted."],
+    submitting: ["Submitting Birth", "Sending the approved transaction to Thru Betanet."],
+    submitted: ["Waiting for confirmation", "Your transaction is being checked. Check its status before starting another Birth."],
+    syncing: ["Birth confirmed", "Waiting for the organism account to become readable. Checking status will not send another transaction."],
+    confirmed: ["Your organism is on-chain", "Birth succeeded and the organism's live state is now shown below."],
+    failed: ["Birth could not be completed", update.error?.message ?? "Check the wallet approval and try again."],
+  };
+  return (
+    <section className={`birth-progress ${stage === "failed" ? "is-error" : ""}`} aria-label="Birth transaction status">
+      <div className="birth-progress-heading" role={stage === "failed" ? "alert" : "status"} aria-live="polite">
+        <div><p>THRU WALLET / BIRTH</p><h2>{copy[stage][0]}</h2><span>{copy[stage][1]}</span></div>
+        {account && <small title={account}>Account {shortenAddress(account)}</small>}
+      </div>
+      <ol className="birth-progress-steps" aria-label="Birth progress">
+        {["Wallet approval", "Submit", "Confirm", "Read organism"].map((label, index) => (
+          <li key={label} className={index < step ? "is-complete" : index === step && stage !== "failed" ? "is-current" : ""} aria-current={index === step ? "step" : undefined}>
+            <span aria-hidden="true">{index < step ? "\u2713" : index + 1}</span>{label}
+          </li>
+        ))}
+      </ol>
+      {(update.signature || update.prepared) && (
+        <div className="birth-progress-links">
+          {update.signature && <a href={explorerLink("tx", update.signature)} target="_blank" rel="noreferrer">View transaction ↗</a>}
+          {update.prepared && <a href={explorerLink("address", update.prepared.organismAddress)} target="_blank" rel="noreferrer">{update.organism ? "View organism" : "Organism address"} ↗</a>}
+        </div>
+      )}
     </section>
   );
 }
@@ -530,10 +597,10 @@ function noticeCopy(notice: Notice, detail?: string | null) {
   if (notice === "faucet-submitted") return detail ?? "Faucet request submitted. Waiting for the Betanet balance to update.";
   if (notice === "faucet-success") return detail ?? "Faucet funds confirmed by the Betanet provider.";
   if (notice === "faucet-error") return detail ?? "Faucet request could not be completed.";
-  if (notice === "birth") return "Birth requires a configured Cambrian Betanet deployment.";
-  if (notice === "birth-submitted") return "Birth was submitted. Waiting for the Betanet execution result.";
-  if (notice === "birth-success") return "Birth transaction confirmed by the Betanet RPC.";
-  if (notice === "birth-error") return "Birth could not be completed. Check the wallet approval and Betanet state.";
+  if (notice === "birth") return detail ?? "Birth requires a configured Cambrian Betanet deployment.";
+  if (notice === "birth-submitted") return detail ?? "Birth was submitted. Waiting for the Betanet execution result.";
+  if (notice === "birth-success") return detail ?? "Birth transaction confirmed by the Betanet RPC.";
+  if (notice === "birth-error") return detail ?? "Birth could not be completed. Check the wallet approval and Betanet state.";
   return detail ?? "Working on your request...";
 }
 
@@ -559,20 +626,32 @@ function DashboardPage() {
   const [notice, setNotice] = useState<Notice>(null);
   const [noticeDetail, setNoticeDetail] = useState<string | null>(null);
   const [birthStage, setBirthStage] = useState<BirthTransactionStage | null>(null);
+  const [birthUpdate, setBirthUpdate] = useState<BirthTransactionUpdate | null>(null);
+  const [birthReceipt, setBirthReceipt] = useState<BirthTransactionResult | null>(null);
+  const [birthAccount, setBirthAccount] = useState<string | null>(null);
+  const [createdOrganism, setCreatedOrganism] = useState<CambrianOrganismRecord | null>(null);
+  const [chainRefreshKey, setChainRefreshKey] = useState(0);
+  const [birthBusy, setBirthBusy] = useState(false);
+  const birthBusyRef = useRef(false);
+  const birthControllerRef = useRef<AbortController | null>(null);
   const [faucetStage, setFaucetStage] = useState<FaucetStage>("idle");
   const [balanceRefreshKey, setBalanceRefreshKey] = useState(0);
   const { thru } = useThru();
-  const { wallet, selectedAccount, isConnected } = useWallet();
+  const { wallet, selectedAccount, isConnected, connect } = useWallet();
   const localWallet = useLocalWallet();
-  const localSigner = localWallet.status === "unlocked" ? localWalletController.getSigner() : null;
-  const activeSigner = localSigner ?? (wallet && isConnected ? wallet : null);
-  const activeAddress = localSigner?.account.address ?? (selectedAccount && isConnected ? selectedAccount.address : null);
-  const organismRead = useOrganismCollection();
-  const activityRead = useAccountTransactions();
+  const activeWallet = selectActiveWallet(isConnected, selectedAccount?.address,
+    localWallet.status === "unlocked" ? localWallet.account?.address : null);
+  const localSigner = activeWallet?.provider === "local" ? localWalletController.getSigner() : null;
+  const activeAddress = activeWallet?.address ?? null;
+  const organismRead = useOrganismCollection(chainRefreshKey, createdOrganism);
+  const activityRead = useAccountTransactions(chainRefreshKey, isConnected ? selectedAccount?.address : undefined);
   const organism = organismRead.organisms[0];
+  const birthPending = Boolean(birthReceipt && !birthReceipt.organism);
+
+  useEffect(() => () => birthControllerRef.current?.abort(), []);
 
   const handleBirth = async () => {
-    if (birthStage) return;
+    if (birthBusyRef.current) return;
 
     if (!appConfig.programId || !appConfig.abiId) {
       setNotice("birth");
@@ -580,27 +659,76 @@ function DashboardPage() {
       return;
     }
 
-    if (!thru || !activeSigner || !activeAddress) {
+    if (!thru || !wallet) {
       setNotice("birth-error");
-      setNoticeDetail("Create or unlock a wallet before approving a birth transaction.");
+      setNoticeDetail("Thru Wallet is still initializing. Wait a moment and try again.");
       return;
     }
 
+    birthBusyRef.current = true;
+    setBirthBusy(true);
+    const controller = new AbortController();
+    birthControllerRef.current = controller;
     setNotice(null);
     setNoticeDetail(null);
+    const onUpdate = (update: BirthTransactionUpdate) => {
+      if (controller.signal.aborted) return;
+      setBirthStage(update.stage);
+      setBirthUpdate(update);
+    };
+
     try {
-      const result = await executeBirthTransaction(thru, appConfig, activeSigner, {
-        walletAddress: activeAddress,
-        seed: `birth-${Date.now()}`,
-        onUpdate: ({ stage }) => setBirthStage(stage),
-      });
-      setNotice(result.stage === "confirmed" ? "birth-success" : "birth-submitted");
+      let result: BirthTransactionResult;
+      if (birthReceipt && !birthReceipt.organism) {
+        onUpdate({ stage: birthReceipt.stage === "confirmed" ? "syncing" : "submitted", prepared: birthReceipt.prepared, signature: birthReceipt.signature });
+        result = await confirmBirthTransaction(thru, appConfig, birthReceipt, { onUpdate, signal: controller.signal });
+      } else {
+        setBirthReceipt(null);
+        setBirthAccount(null);
+        if (!wallet.connected) {
+          onUpdate({ stage: "connecting" });
+          await connect({ metadata: walletMetadata, passkeyName: "Cambrian" });
+        }
+        controller.signal.throwIfAborted();
+        onUpdate({ stage: "preparing" });
+        const context = await wallet.getSigningContext();
+        if (!context.selectedAccountPublicKey) throw new Error("Select an account in Thru Wallet before approving Birth.");
+        setBirthAccount(context.selectedAccountPublicKey);
+        result = await executeBirthTransaction(thru, appConfig, wallet, {
+          walletAddress: context.selectedAccountPublicKey,
+          signingMode: "thru-wallet",
+          seed: `birth-${crypto.randomUUID().slice(0, 24)}`,
+          onUpdate,
+          signal: controller.signal,
+        });
+      }
+      if (controller.signal.aborted) return;
+      setBirthReceipt(result);
+      setBalanceRefreshKey((current) => current + 1);
+      setChainRefreshKey((current) => current + 1);
+      if (result.organism) {
+        setCreatedOrganism(result.organism);
+        setNotice("birth-success");
+        setNoticeDetail("Birth confirmed. Your organism is now visible in the dashboard.");
+      } else {
+        setNotice("birth-submitted");
+        setNoticeDetail(result.stage === "confirmed"
+          ? "Birth confirmed. The organism is still syncing; use Check Birth status to read it again."
+          : "Birth is awaiting confirmation. Check its status before submitting another transaction.");
+      }
     } catch (error) {
-      console.error("[Cambrian] birth transaction failed", error);
+      if (controller.signal.aborted) return;
+      const normalized = error instanceof Error ? error : new Error("Birth could not be completed.");
+      setBirthUpdate((current) => ({ ...current, stage: "failed", error: normalized }));
+      if (error instanceof BirthExecutionError) setBirthReceipt(null);
       setNotice("birth-error");
-      setNoticeDetail(error instanceof Error ? error.message : null);
+      setNoticeDetail(normalized.message);
     } finally {
-      setBirthStage(null);
+      birthBusyRef.current = false;
+      if (!controller.signal.aborted) {
+        setBirthStage(null);
+        setBirthBusy(false);
+      }
     }
   };
 
@@ -731,7 +859,8 @@ function DashboardPage() {
         </div>
       </header>
 
-      <EcosystemStage onBirth={handleBirth} birthStage={birthStage} />
+      <EcosystemStage onBirth={handleBirth} birthStage={birthStage} birthBusy={birthBusy} birthPending={birthPending} organism={organism} />
+      <BirthStatus update={birthUpdate} account={birthAccount} />
 
       <section className="signal-section" aria-labelledby="signal-title">
         <h2 id="signal-title">Signal</h2>
@@ -815,8 +944,9 @@ function WalletPopover({ anchorElement, popoverRef, onClose, refreshKey = 0, onF
   const localAddress = localWallet.status === "unlocked" ? localWallet.account?.address ?? null : null;
   const hostedConnected = Boolean(isConnected && selectedAccount);
   const hostedAddress = hostedConnected ? selectedAccount?.address ?? null : null;
-  const address = localAddress ?? hostedAddress;
-  const usingLocalWallet = Boolean(localAddress);
+  const activeWallet = selectActiveWallet(hostedConnected, hostedAddress, localAddress);
+  const address = activeWallet?.address ?? null;
+  const usingLocalWallet = activeWallet?.provider === "local";
   const activeLocalWallet = localWallet.wallets.find((wallet) => wallet.id === localWallet.activeWalletId);
   const showSetup = showLocalSetup && (localWallet.status === "absent" || isAddingWallet);
   const sendView = Boolean(showSend && address);

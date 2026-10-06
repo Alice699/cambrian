@@ -50,7 +50,7 @@ test("pads a UTF-8 seed to exactly 32 bytes", () => {
 test("decodes the Cambrian organism account layout", () => {
   const bytes = new Uint8Array(264);
   const view = new DataView(bytes.buffer);
-  view.setUint32(0, 0x434d4231, true);
+  view.setUint32(0, 0x43414d42, true);
   view.setUint8(4, 1);
   view.setUint8(5, 2);
   view.setUint16(6, 9, true);
@@ -65,7 +65,7 @@ test("decodes the Cambrian organism account layout", () => {
 
   const state = decodeCambrianOrganism(bytes);
 
-  assert.equal(state.magic, 0x434d4231);
+  assert.equal(state.magic, 0x43414d42);
   assert.equal(state.version, 1);
   assert.equal(state.status, 2);
   assert.equal(state.generation, 9);

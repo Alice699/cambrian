@@ -227,6 +227,7 @@ export class LocalWalletSession implements LocalWalletSigner {
     const signed = await this.client.transactions.buildAndSign({
       feePayer: { publicKey: this.account.address, privateKey },
       program: intent.programAddress,
+      ...(intent.stateUnits !== undefined ? { header: { stateUnits: intent.stateUnits } } : {}),
       accounts: {
         readWrite: intent.readWriteAddresses,
         readOnly: intent.readOnlyAddresses,

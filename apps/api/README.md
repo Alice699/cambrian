@@ -6,10 +6,11 @@ Run the local API with:
 
     npm run api:dev
 
-The default server listens on 127.0.0.1:8787. The web app uses that address
-automatically in Vite development when VITE_API_URL is empty. In production,
-set VITE_API_URL to the reverse-proxied API origin or keep it empty and route
-/api to this service.
+The default server listens on 127.0.0.1:8787. When VITE_API_URL is empty, the
+web app calls /api on its own origin. Vite forwards those requests to the API,
+so a change of local frontend port does not cause a CORS failure. Restart the
+Vite dev server after adding or changing its proxy configuration. In production,
+route /api to this service or set VITE_API_URL to the API origin.
 
 The faucet is deliberately disabled until an amount and a payout provider are
 configured:
