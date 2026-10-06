@@ -20,6 +20,7 @@ import { FaucetButton } from "./components/FaucetButton";
 import { AddressDisplay } from "./components/AddressDisplay";
 import { ReadStateCard } from "./components/ReadStateCard";
 import { UiIcon } from "./components/UiIcon";
+import { NetworkCard } from "./components/NetworkCard";
 import type { FaucetStage } from "./presentation-model";
 export { ReadStateCard } from "./components/ReadStateCard";
 import { BirthStatus, FaucetStatus, TransactionStatusBadge, TransactionNotice, StatusIcon, explorerLink } from "./components/TransactionFeedback";
@@ -28,7 +29,6 @@ import { loadPendingBirth, savePendingBirth, clearPendingBirth } from "./birth-r
 import markAsset from "./assets/cambrian-mark.svg";
 import footerMarkAsset from "./assets/cambrian-mark-light.svg";
 import thruLogoAsset from "./assets/thru-logo.png";
-import networkDotAsset from "./assets/hero-organism.svg";
 import heroOrganismAsset from "./assets/organisms-thumbnail.svg";
 import organismsThumbnailAsset from "./assets/network-dot.svg";
 import { appConfig } from "./config";
@@ -142,10 +142,6 @@ function LogoPrimary() {
   );
 }
 
-function NetworkDot() {
-  return <img className="status-dot" src={networkDotAsset} width="10" height="10" alt="" />;
-}
-
 function Sidebar({ activeRoute }: { activeRoute: Exclude<Route, "landing"> }) {
   return (
     <aside className="sidebar">
@@ -158,10 +154,7 @@ function Sidebar({ activeRoute }: { activeRoute: Exclude<Route, "landing"> }) {
         <a className={`sidebar-nav-item ${activeRoute === "learn" ? "active" : ""}`} href="/app/learn" onClick={(event) => navigateInternal("/app/learn", event)} aria-current={activeRoute === "learn" ? "page" : undefined}>Learn</a>
       </nav>
       <a className="back-home-link" href="/" onClick={(event) => navigateInternal("/", event)}>Back to landing</a>
-      <div className="network-status">
-        <p>NETWORK</p>
-        <div>Betanet&nbsp; / &nbsp;Test network <NetworkDot /></div>
-      </div>
+      <NetworkCard />
     </aside>
   );
 }
@@ -1131,7 +1124,7 @@ export default function App() {
   }, []);
 
   return (
-    <div className="route-view" key={route}>
+    <div className={`route-view ${route === "landing" ? "" : "is-dashboard"}`} key={route}>
       {route === "dashboard" && <DashboardPage />}
       {route === "organisms" && <OrganismsPage />}
       {route === "activity" && <ActivityPage />}

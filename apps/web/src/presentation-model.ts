@@ -20,6 +20,20 @@ export function officialBalanceLabel(balance: string | bigint | null): string | 
   return `${BigInt(balance).toLocaleString("en-US")} THRU`;
 }
 
+export function walletLauncherPresentation(options: {
+  address: string | null; label?: string; connecting: boolean; checking?: boolean; balance: string | null;
+  balanceStatus: "loading" | "ready" | "unavailable";
+}) {
+  if (options.checking) return { label: options.address ? options.label || "Thru account" : "Checking Thru Wallet…", detail: "Checking your wallet connection", connected: Boolean(options.address), busy: true };
+  if (options.connecting) return { label: "Waiting for Thru Wallet…", detail: "Approve in the official wallet", connected: Boolean(options.address), busy: true };
+  if (!options.address) return { label: "Connect Thru Wallet", detail: "Official wallet · Betanet", connected: false, busy: false };
+  const balance = options.balanceStatus === "ready" ? officialBalanceLabel(options.balance) : undefined;
+  return {
+    label: options.label || "Thru account", connected: true, busy: false,
+    detail: `${shortPublicAddress(options.address, 6, 4)} · ${balance ?? (options.balanceStatus === "unavailable" ? "Balance unavailable" : "Thru Betanet")}`,
+  };
+}
+
 /** Copy the full public value; callers must await completion before showing success. */
 export async function copyPublicValue(value: string, clipboard?: { writeText: (text: string) => Promise<void> }): Promise<void> {
   if (!clipboard?.writeText) throw new Error("Clipboard unavailable");

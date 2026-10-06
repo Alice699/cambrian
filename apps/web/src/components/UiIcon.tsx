@@ -1,4 +1,4 @@
-export type UiIconName = "wallet" | "organism" | "activity" | "faucet" | "copy" | "check" | "external" | "arrow" | "retry" | "alert";
+export type UiIconName = "wallet" | "organism" | "activity" | "faucet" | "copy" | "check" | "external" | "arrow" | "chevron" | "retry" | "alert";
 
 export function UiIcon({ name, className = "" }: { name: UiIconName; className?: string }) {
   return <svg className={`ui-icon ${className}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -10,6 +10,7 @@ export function UiIcon({ name, className = "" }: { name: UiIconName; className?:
       : name === "check" ? <path d="m5 12 4 4 10-10" />
       : name === "external" ? <><path d="M14 4h6v6m0-6-9 9" /><path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" /></>
       : name === "arrow" ? <path d="M4 12h16m-6-6 6 6-6 6" />
+      : name === "chevron" ? <path d="m7 10 5 5 5-5" />
       : name === "retry" ? <><path d="M20 8a8 8 0 1 0 0 8M20 3v5h-5" /></>
       : <><path d="M12 8v5m0 4h.01" /><path d="m10.3 4.8-8 14A1.5 1.5 0 0 0 3.6 21h16.8a1.5 1.5 0 0 0 1.3-2.2l-8-14a2 2 0 0 0-3.4 0Z" /></>}
   </svg>;

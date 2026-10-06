@@ -2,7 +2,46 @@
 .ui-icon { display: block; width: 20px; height: 20px; flex: 0 0 20px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .dashboard-main { min-width: 0; }
+.route-view.is-dashboard { animation: none; }
 .header-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 12px; }
+.header-actions > .faucet-button { min-height: 54px; }
+.inner-page-action { align-items: center; }
+
+.network-status {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  min-height: 0;
+  padding: 15px;
+  border: 1px solid #314338;
+  border-radius: 15px;
+  background: linear-gradient(135deg, #21372a, #192c21);
+  box-shadow: 0 5px 14px #1b33220c;
+}
+.network-status .network-status-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  color: #c0cdbd;
+  font: 600 9px/14px "IBM Plex Sans", sans-serif;
+  letter-spacing: 1px;
+}
+.network-status .network-environment {
+  padding: 3px 7px;
+  border: 1px solid #4b6045;
+  border-radius: 6px;
+  background: #2d412e;
+  color: #cbdac3;
+  font: 500 9px/12px "IBM Plex Sans", sans-serif;
+  letter-spacing: .2px;
+}
+.network-status .network-status-chain { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.network-status .network-status-copy { display: grid; gap: 4px; min-width: 0; white-space: normal; }
+.network-status-copy > strong { color: #f2f5eb; font: 600 14px/18px "IBM Plex Sans", sans-serif; letter-spacing: -.1px; }
+.network-status-copy > span { color: #b0c2a7; font: 400 11px/15px "IBM Plex Sans", sans-serif; }
+@media (max-width: 700px) { .network-status { display: none; } }
 .faucet-button { display: inline-flex; align-items: center; gap: 11px; width: auto; min-width: 186px; height: auto; min-height: 48px; padding: 9px 13px; border: 1px solid #cbd8c9; border-radius: 12px; background: #f9fbf4; color: #355440; text-align: left; box-shadow: 0 2px 6px #22352a04; transition: border-color .18s, background .18s, box-shadow .18s; }
 .faucet-button:hover:not(:disabled) { background: #eef4e8; border-color: #7d9b7f; box-shadow: 0 3px 12px #243c2710; }
 .faucet-button:focus-visible, .state-action:focus-visible, .read-state-retry:focus-visible, .address-pill :is(button, a):focus-visible { outline: 2px solid #62896b; outline-offset: 3px; }

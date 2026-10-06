@@ -7,7 +7,7 @@ and account activity, and makes the organism transaction lifecycle visible.
 
 ## Features
 
-- Official Thru-hosted wallet button and account menu, with no custom wallet popup
+- Instant wallet launcher with the original Thru logo and official Thru-hosted account menu
 - Live native THRU balance in the official wallet control
 - Organism discovery filtered by the selected wallet's on-chain controller
 - Loading skeletons, clear empty states, and read-only retry actions
@@ -18,6 +18,9 @@ and account activity, and makes the organism transaction lifecycle visible.
 
 Cambrian no longer offers a local wallet. Previously stored local vaults are
 not erased by this change; the removed source remains recoverable in Git history.
+
+The app styles only the launcher button. Account switching, account management,
+connection approval, and signing remain inside the official Thru Wallet UI.
 
 ## Run locally
 

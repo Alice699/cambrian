@@ -7,7 +7,7 @@ import { createServer } from "vite";
 import { fileURLToPath } from "node:url";
 
 // Render real React components, without a browser, passkey, or network writes.
-let server, components, app, faucet, address, wallet;
+let server, components, app, faucet, address, wallet, network, presentation;
 before(async () => {
   server = await createServer({ root: fileURLToPath(new URL("../apps/web", import.meta.url)), server: { middlewareMode: true, hmr: false, watch: null }, appType: "custom", logLevel: "silent" });
   components = await server.ssrLoadModule("/src/components/TransactionFeedback.tsx");
@@ -15,6 +15,8 @@ before(async () => {
   faucet = await server.ssrLoadModule("/src/components/FaucetButton.tsx");
   address = await server.ssrLoadModule("/src/components/AddressDisplay.tsx");
   wallet = await server.ssrLoadModule("/src/components/WalletControl.tsx");
+  network = await server.ssrLoadModule("/src/components/NetworkCard.tsx");
+  presentation = await server.ssrLoadModule("/src/presentation-model.ts");
 });
 after(async () => { await server?.close(); });
 
@@ -130,9 +132,52 @@ test("empty-state actions appear only when idle; loading and error states do not
   assert.doesNotMatch(render({ tone: "error" }), /Connect Thru Wallet/);
 });
 
-test("the wallet wrapper renders no custom account popup or custody form", () => {
-  // WalletButton mounts its hosted iframe on the client; SSR only tests our wrapper.
+test("the wallet launcher is present in the first render, without waiting for an iframe or exposing a custody form", () => {
   const html = renderToStaticMarkup(createElement(ThruProvider, { config: { rpcUrl: "https://rpc.betanet.thru.org", iframeUrl: "https://app.tid.sh/embedded" } }, createElement(wallet.OfficialWalletControl)));
-  assert.match(html, /Official Thru Wallet control/);
+  assert.match(html, /Thru Wallet account controls/);
+  assert.match(html, /class="wallet-launcher/);
+  assert.match(html, /Checking Thru Wallet/);
+  assert.doesNotMatch(html, /Approve in the official wallet/);
+  assert.match(html, /thru-logo\.png/);
+  assert.doesNotMatch(html, /<iframe/);
   assert.doesNotMatch(html, /wallet-popover|recovery phrase|Create a wallet|Import a wallet|local vault/i);
+});
+
+test("the empty-state connect action uses the original Thru logo, not a generic wallet glyph", () => {
+  const html = renderToStaticMarkup(createElement(ThruProvider, { config: { rpcUrl: "https://rpc.betanet.thru.org", iframeUrl: "https://app.tid.sh/embedded" } }, createElement(wallet.ConnectWalletAction)));
+  assert.match(html, /connect-thru-action/);
+  assert.match(html, /thru-brand-logo/);
+  assert.match(html, /thru-logo\.png/);
+  assert.match(html, /Checking Thru Wallet/);
+});
+
+test("network information separates the chain name and test environment without claiming a live connection", () => {
+  const html = renderToStaticMarkup(createElement(network.NetworkCard));
+  assert.match(html, /Thru Betanet · Test network/);
+  assert.match(html, /network-environment/);
+  assert.match(html, /Testnet/);
+  assert.match(html, /Test assets only/);
+  assert.match(html, /thru-logo\.png/);
+  assert.doesNotMatch(html, /Connected|Online|status-dot/);
+});
+
+test("a connected launcher shows the account immediately and opens only an official account menu", () => {
+  const model = presentation.walletLauncherPresentation({ address: "account-A", label: "My wallet", connecting: false, balance: "100", balanceStatus: "ready" });
+  const html = renderToStaticMarkup(createElement(wallet.WalletLauncherButton, { presentation: model, onClick: () => {} }));
+  assert.match(html, /My wallet/);
+  assert.match(html, /100 THRU/);
+  assert.match(html, /aria-haspopup="menu"/);
+  assert.match(html, /aria-expanded="false"/);
+  assert.match(html, /Open official Thru Wallet menu/);
+  assert.doesNotMatch(html, /<iframe|disabled=|wallet-popover/);
+});
+
+test("an approval-pending launcher is disabled and communicates waiting without changing its brand logo", () => {
+  const model = presentation.walletLauncherPresentation({ address: null, connecting: true, balance: null, balanceStatus: "loading" });
+  const html = renderToStaticMarkup(createElement(wallet.WalletLauncherButton, { presentation: model, onClick: () => {} }));
+  assert.match(html, /disabled=""/);
+  assert.match(html, /aria-busy="true"/);
+  assert.match(html, /Waiting for Thru Wallet/);
+  assert.match(html, /status-icon is-pending/);
+  assert.match(html, /thru-logo\.png/);
 });
