@@ -1,7 +1,7 @@
 import type { BirthTransactionUpdate, CambrianTransactionSummary } from "@cambrian/sdk";
 import { birthPresentation, type FeedbackTone } from "../transaction-model";
 import { AddressDisplay } from "./AddressDisplay";
-import { UiIcon } from "./UiIcon";
+import { UiIcon, type UiIconName } from "./UiIcon";
 import { explorerLink } from "../explorer";
 export { explorerLink } from "../explorer";
 
@@ -31,33 +31,56 @@ export function FaucetStatus({ tone, description, onCheck, busy = false }: {
   </section>;
 }
 
+const BIRTH_STEPS: { label: string; icon: UiIconName; completed: string }[] = [
+  { label: "Wallet approval", icon: "wallet", completed: "Approved in Thru Wallet" },
+  { label: "Submit", icon: "broadcast", completed: "Sent to Thru Betanet" },
+  { label: "Confirm", icon: "shield", completed: "Confirmed on-chain" },
+  { label: "Read organism", icon: "organism", completed: "Organism verified and ready" },
+];
+
+const BIRTH_CURRENT_COPY: Record<BirthTransactionUpdate["stage"], string> = {
+  connecting: "Connecting your wallet",
+  preparing: "Preparing your request",
+  "awaiting-approval": "Waiting for your approval",
+  signed: "Ready to submit",
+  submitting: "Sending to the network",
+  submitted: "Awaiting network confirmation",
+  syncing: "Verifying organism state",
+  confirmed: "All stages complete",
+  failed: "Not completed",
+};
+
 export function BirthStatus({ update, account, onCheck, busy = false }: {
   update: BirthTransactionUpdate | null; account: string | null; onCheck?: () => void; busy?: boolean;
 }) {
   if (!update) return null;
   const state = birthPresentation(update.stage, Boolean(update.signature));
-  return <section className={`birth-progress is-${state.tone}`} aria-label="Birth transaction progress">
+  return <section className={`birth-progress is-${state.tone}`} data-stage={update.stage} aria-label="Birth transaction progress">
     <div className="birth-progress-heading" role={state.tone === "error" ? "alert" : "status"} aria-live="polite" aria-atomic="true">
       <StatusIcon tone={state.tone} spinning={state.tone === "pending"} />
       <div className="birth-progress-copy"><p>THRU WALLET / BIRTH</p><h2>{state.title}</h2><span>{update.error?.message ?? state.description}</span></div>
-      <div className="birth-progress-summary"><span className={`feedback-badge is-${state.tone}`}>{state.label}</span><small>{state.step} of 4 steps complete</small></div>
+      <div className="birth-progress-summary"><span className={`feedback-badge is-${state.tone}`}><UiIcon name={state.tone === "success" ? "check" : state.tone === "error" ? "alert" : "activity"} />{state.label}</span><span className="birth-network"><i aria-hidden="true" />Thru Betanet</span></div>
     </div>
-    <ol className="birth-progress-steps" aria-label="Transaction steps">
-      {["Wallet approval", "Submit", "Confirm", "Read organism"].map((label, index) => {
-        const complete = index < state.step;
-        const current = index === state.step;
-        return <li key={label} className={complete ? "is-complete" : current ? `is-current ${state.tone === "error" ? "is-error" : ""}` : ""} aria-current={current ? "step" : undefined}>
-          <span className="step-node" aria-hidden="true">{complete ? <UiIcon name="check" /> : current && state.tone === "error" ? <UiIcon name="alert" /> : index + 1}</span>
-          <span className="step-copy"><strong>{label}</strong><small>{complete ? "Complete" : current ? state.tone === "error" ? "Not completed" : "In progress" : "Waiting"}</small></span>
-        </li>;
-      })}
-    </ol>
+    <div className="birth-progress-body">
+      <div className="birth-progress-overview"><span>Transaction progress</span><div role="progressbar" aria-label="Completed transaction steps" aria-valuemin={0} aria-valuemax={4} aria-valuenow={state.step} aria-valuetext={`${state.step} of 4 steps complete`}><strong>{state.step}</strong> of 4 steps complete</div></div>
+      <ol className="birth-progress-steps" aria-label="Transaction steps">
+        {BIRTH_STEPS.map((step, index) => {
+          const complete = index < state.step;
+          const current = index === state.step;
+          const failed = current && state.tone === "error";
+          return <li key={step.label} className={complete ? "is-complete" : current ? `is-current${failed ? " is-error" : ""}` : "is-waiting"} aria-current={current ? "step" : undefined}>
+            <span className="step-node" aria-hidden="true"><UiIcon name={complete ? "check" : failed ? "alert" : step.icon} /></span>
+            <span className="step-copy"><strong><span className="step-ordinal">0{index + 1}</span>{step.label}</strong><small>{complete ? step.completed : current ? BIRTH_CURRENT_COPY[update.stage] : "Waiting for previous step"}</small></span>
+          </li>;
+        })}
+      </ol>
+    </div>
     <div className="birth-progress-footer">
-      {account ? <AddressDisplay value={account} label="Account" compact /> : <span>Your wallet approves every transaction</span>}
+      {account ? <AddressDisplay value={account} label="Account" /> : <span>Your wallet approves every transaction</span>}
       <div className="birth-progress-links">
         {update.signature && <a href={explorerLink("tx", update.signature)} target="_blank" rel="noreferrer"><UiIcon name="activity" />View transaction</a>}
-        {update.organism && <a href={explorerLink("address", update.organism.address)} target="_blank" rel="noreferrer"><UiIcon name="organism" />View organism</a>}
-        {onCheck && state.tone === "pending" && ["submitted", "syncing"].includes(update.stage) && <button type="button" onClick={onCheck} disabled={busy}>{busy ? "Checking…" : "Check status"}</button>}
+        {update.organism && <a className="birth-progress-primary" href={explorerLink("address", update.organism.address)} target="_blank" rel="noreferrer"><UiIcon name="organism" />View organism</a>}
+        {onCheck && state.tone === "pending" && ["submitted", "syncing"].includes(update.stage) && <button className="birth-progress-primary" type="button" onClick={onCheck} disabled={busy}><UiIcon name="activity" />{busy ? "Checking…" : "Check status"}</button>}
       </div>
     </div>
   </section>;

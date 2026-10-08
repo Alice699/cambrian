@@ -1,0 +1,136 @@
+/* A full-width, receipt-driven journey. No timer can advance its steps. */
+.birth-progress {
+  container: birth-journey / inline-size;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  margin: 20px 0 0;
+  overflow: hidden;
+  border: 1px solid #dbe3d5;
+  border-radius: 20px;
+  background: #fdfefa;
+  box-shadow: 0 5px 22px #263a2406;
+  animation: feedback-enter .28s ease-out;
+}
+.birth-progress.is-error { border-color: #e5c1c4; }
+.birth-progress-heading {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+  padding: 27px 30px 24px;
+}
+.birth-progress-heading > .status-icon {
+  width: 54px;
+  height: 54px;
+  border: 1px solid #e6cf92;
+  border-radius: 16px;
+  background: #fff3cd;
+}
+.birth-progress-heading > .status-icon svg { width: 27px; height: 27px; }
+.birth-progress.is-success .birth-progress-heading > .status-icon { border-color: #286e44; background: #286e44; color: #fff !important; box-shadow: 0 4px 12px #286e441a; }
+.birth-progress.is-error .birth-progress-heading > .status-icon { border-color: #b43d43; background: #b43d43; color: #fff !important; }
+.birth-progress-copy { min-width: 0; }
+.birth-progress-copy > p { margin: 0 0 6px; color: #718067; font: 600 11px/16px "IBM Plex Sans", sans-serif; letter-spacing: 1.05px; }
+.birth-progress-copy > h2 { margin: 0 0 7px; color: #273c29; font: 600 26px/33px "Space Grotesk", sans-serif; letter-spacing: -.65px; }
+.birth-progress-copy > span { display: block; max-width: 690px; color: #687664; font: 400 14px/22px "IBM Plex Sans", sans-serif; overflow-wrap: anywhere; }
+.birth-progress-summary { display: grid; justify-items: end; gap: 11px; align-self: start; padding-top: 3px; }
+.birth-progress-summary .feedback-badge { gap: 7px; padding: 7px 12px; font-size: 12px !important; line-height: 18px !important; }
+.birth-progress-summary .feedback-badge > .ui-icon { width: 14px; height: 14px; flex-basis: 14px; }
+.birth-network { display: inline-flex; align-items: center; gap: 6px; color: #74816c; font: 400 12px/18px "IBM Plex Sans", sans-serif; white-space: nowrap; }
+.birth-network > i { width: 5px; height: 5px; border-radius: 50%; background: #879c78; }
+.birth-progress-body { padding: 0 30px 28px; }
+.birth-progress-overview { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding-top: 19px; border-top: 1px solid #e6ebe1; }
+.birth-progress-overview > span { color: #536c49; font: 500 13px/20px "IBM Plex Sans", sans-serif; }
+.birth-progress-overview > div { color: #7c8a72; font: 400 12px/20px "IBM Plex Sans", sans-serif; }
+.birth-progress-overview strong { color: #34582b; font-weight: 600; }
+.birth-progress-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; margin: 25px 0 0; padding: 0; list-style: none; }
+.birth-progress-steps > li { position: relative; display: flex; flex-direction: column; align-items: center; min-width: 0; padding: 0 12px; }
+.birth-progress-steps > li::after {
+  position: absolute;
+  top: 26px;
+  left: calc(50% + 34px);
+  right: calc(-50% + 34px);
+  z-index: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: #e0e6d8;
+  transition: background .25s ease;
+  content: "";
+}
+.birth-progress-steps > li:last-child::after { display: none; }
+.birth-progress-steps > .is-complete::after { background: #4c8a5c; }
+.birth-progress-steps .step-node {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: 52px;
+  height: 52px;
+  flex: 0 0 52px;
+  place-items: center;
+  border: 1px solid #d9e2d0;
+  border-radius: 50%;
+  background: #f2f6eb;
+  color: #829574;
+  transition: background .2s, border-color .2s, color .2s, box-shadow .2s;
+}
+.birth-progress-steps .step-node > .ui-icon { width: 24px; height: 24px; }
+.birth-progress-steps .is-complete .step-node { border-color: #2c7448; background: #2c7448; color: #fff; box-shadow: 0 3px 8px #2c744814; animation: step-complete .26s ease-out; }
+.birth-progress-steps .is-complete .step-node > .ui-icon { stroke-width: 2.1; }
+.birth-progress-steps .is-current .step-node { border-color: #d9b45d; background: #fff3cc; color: #976911; box-shadow: 0 0 0 5px #fbf3df; }
+.birth-progress-steps .is-current:not(.is-error) .step-node::before { position: absolute; inset: -6px; border: 2px solid transparent; border-top-color: #c59629; border-right-color: #e6ca813d; border-radius: 50%; animation: feedback-spin 1.6s linear infinite; content: ""; }
+.birth-progress-steps .is-current.is-error .step-node { border-color: #b43d43; background: #b43d43; color: #fff; box-shadow: 0 0 0 5px #fcf0ef; }
+.birth-progress-steps .step-copy { display: grid; min-width: 0; gap: 5px; margin-top: 14px; text-align: center; }
+.step-copy > strong { display: flex; align-items: baseline; justify-content: center; gap: 8px; color: #354b2c; font: 600 15px/22px "IBM Plex Sans", sans-serif; }
+.step-copy .step-ordinal { color: #8b9a7e; font: 500 11px/18px "IBM Plex Sans", sans-serif; font-variant-numeric: tabular-nums; }
+.step-copy > small { color: #7c8b72; font: 400 12px/19px "IBM Plex Sans", sans-serif; overflow-wrap: anywhere; }
+.is-complete > .step-copy > small { color: #547a4b; }
+.is-current > .step-copy > strong { color: #8e6515; }
+.is-current > .step-copy > small { color: #8b773e; }
+.is-current.is-error > .step-copy > strong, .is-current.is-error > .step-copy > small { color: #b24349; }
+.birth-progress-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 18px; padding: 18px 30px; border-top: 1px solid #e1e8d9; background: #f5f8ef; }
+.birth-progress-footer > span { color: #74846a; font: 400 12px/19px "IBM Plex Sans", sans-serif; }
+.birth-progress-footer .address-display { gap: 10px; }
+.birth-progress-footer .address-label { color: #6c8060; font: 500 12px/18px "IBM Plex Sans", sans-serif; }
+.birth-progress-footer .address-pill { border-color: #d8e2d0; background: #fdfefa; }
+.birth-progress-footer .address-value code { font-size: 12px; }
+.birth-progress-links { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.birth-progress-links > a, .birth-progress-links > button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 10px 14px; border: 1px solid #d5e0cb; border-radius: 10px; background: #fdfefa; color: #4c6940; font: 500 12px/18px "IBM Plex Sans", sans-serif; text-decoration: none; cursor: pointer; transition: background .16s, border-color .16s, box-shadow .16s; }
+.birth-progress-links > a:hover, .birth-progress-links > button:hover:not(:disabled) { border-color: #a5bd95; background: #edf4e4; }
+.birth-progress-links > .birth-progress-primary { border-color: #2e7146; background: #2e7146; color: #fff; box-shadow: 0 2px 5px #2e714610; }
+.birth-progress-links > .birth-progress-primary:hover:not(:disabled) { border-color: #245e39; background: #245e39; }
+.birth-progress.is-pending .birth-progress-links > .birth-progress-primary { border-color: #9d720f; background: #9d720f; }
+.birth-progress.is-pending .birth-progress-links > .birth-progress-primary:hover:not(:disabled) { border-color: #825d0b; background: #825d0b; }
+.birth-progress-links :is(a, button):focus-visible { outline: 2px solid #62896b; outline-offset: 3px; }
+.birth-progress-links > button:disabled { opacity: .65; cursor: wait; }
+.birth-progress-links .ui-icon { width: 16px; height: 16px; flex-basis: 16px; }
+@container birth-journey (max-width: 680px) {
+  .birth-progress-heading { grid-template-columns: 44px minmax(0, 1fr); gap: 12px 15px; padding: 22px 22px 20px; align-items: start; }
+  .birth-progress-heading > .status-icon { width: 44px; height: 44px; border-radius: 13px; }
+  .birth-progress-heading > .status-icon svg { width: 24px; height: 24px; }
+  .birth-progress-copy > h2 { font-size: 23px; line-height: 29px; }
+  .birth-progress-copy > span { font-size: 13px; line-height: 21px; }
+  .birth-progress-summary { grid-column: 2; display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 0; }
+  .birth-progress-body { padding: 0 22px 23px; }
+  .birth-progress-steps { grid-template-columns: minmax(0, 1fr); margin-top: 23px; }
+  .birth-progress-steps > li { display: grid; grid-template-columns: 52px minmax(0, 1fr); min-height: 92px; gap: 15px; align-items: start; padding: 0 0 25px; }
+  .birth-progress-steps > li:last-child { min-height: 52px; padding-bottom: 0; }
+  .birth-progress-steps > li::after { top: 60px; bottom: 8px; left: 25px; right: auto; width: 2px; height: auto; }
+  .birth-progress-steps .step-copy { min-height: 52px; align-content: center; margin: 0; text-align: left; }
+  .step-copy > strong { justify-content: flex-start; }
+  .birth-progress-footer { padding: 17px 22px; gap: 15px; }
+}
+@container birth-journey (max-width: 430px) {
+  .birth-progress-heading { padding: 20px 18px; grid-template-columns: 40px minmax(0, 1fr); gap: 11px 12px; }
+  .birth-progress-heading > .status-icon { width: 40px; height: 40px; }
+  .birth-progress-copy > p { font-size: 10px; letter-spacing: .75px; }
+  .birth-progress-copy > h2 { font-size: 21px; line-height: 27px; }
+  .birth-progress-body { padding: 0 18px 22px; }
+  .birth-progress-overview { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .birth-progress-footer { padding: 17px 18px; }
+  .birth-progress-footer > .address-display, .birth-progress-links { width: 100%; }
+  .birth-progress-links > a, .birth-progress-links > button { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .birth-progress, .birth-progress *, .birth-progress *::before, .birth-progress *::after { animation: none !important; transition: none !important; }
+}

@@ -15,6 +15,7 @@ import "./wallet.css";
 import "./feedback.css";
 import "./dashboard-polish.css";
 import "./activity.css";
+import "./transaction-progress.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

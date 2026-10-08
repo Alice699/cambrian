@@ -112,6 +112,54 @@ test("Birth details use consistent icon buttons with public receipt links and no
   assert.doesNotMatch(html, /[↗↖↘↙→←⇒➜]/);
 });
 
+test("the redesigned stepper announces only completed receipt phases, never time-based progress", () => {
+  const stages = [
+    ["connecting", 0, "Connecting your wallet"], ["preparing", 0, "Preparing your request"],
+    ["awaiting-approval", 0, "Waiting for your approval"], ["signed", 1, "Ready to submit"],
+    ["submitting", 1, "Sending to the network"], ["submitted", 2, "Awaiting network confirmation"],
+    ["syncing", 3, "Verifying organism state"], ["confirmed", 4, "Organism verified and ready"],
+  ];
+  for (const [stage, complete, label] of stages) {
+    const html = renderBirth(stage);
+    assert.match(html, /role="progressbar" aria-label="Completed transaction steps"/);
+    assert.match(html, new RegExp(`aria-valuenow="${complete}"`));
+    assert.match(html, new RegExp(`aria-valuetext="${complete} of 4 steps complete"`));
+    assert.equal((html.match(/class="is-complete"/g) ?? []).length, complete);
+    assert.equal((html.match(/aria-current="step"/g) ?? []).length, complete === 4 ? 0 : 1);
+    assert.equal((html.match(/class="is-waiting"/g) ?? []).length, Math.max(3 - complete, 0));
+    assert.match(html, new RegExp(label));
+    assert.doesNotMatch(html, /[↗↖↘↙→←⇒➜]|100%|\d+ seconds/);
+  }
+});
+
+test("failed execution leaves later steps waiting and keeps its receipt available", () => {
+  const html = renderBirth("failed", { signature: "public-failed-receipt", error: new Error("Execution failed. Inspect the receipt.") });
+  assert.match(html, /data-stage="failed"/);
+  assert.match(html, /class="is-current is-error" aria-current="step"/);
+  assert.match(html, /aria-valuenow="2"/);
+  assert.match(html, /Not completed/);
+  assert.equal((html.match(/class="is-waiting"/g) ?? []).length, 1);
+  assert.doesNotMatch(html, /Organism verified and ready/);
+  assert.match(html, /\/tx\/public-failed-receipt\?rpc=/);
+});
+
+test("the stepper offers a read-only check only after submission, and locks it while checking", () => {
+  const render = (stage, busy = false) => renderToStaticMarkup(createElement(components.BirthStatus, {
+    account: "public-account", update: { stage, signature: "public-receipt" }, onCheck: () => {}, busy,
+  }));
+  for (const stage of ["connecting", "preparing", "awaiting-approval", "signed", "submitting", "confirmed", "failed"]) {
+    assert.doesNotMatch(render(stage), />Check status<\/button>/);
+  }
+  for (const stage of ["submitted", "syncing"]) {
+    assert.match(render(stage), /Check status<\/button>/);
+    assert.match(render(stage, true), /disabled=""[^>]*>.*Checking…<\/button>/);
+  }
+});
+
+test("the stepper remains absent before an action rather than displaying a fake initial transaction", () => {
+  assert.equal(renderToStaticMarkup(createElement(components.BirthStatus, { update: null, account: "public-account" })), "");
+});
+
 test("pagination describes only known pages and uses clear text controls, without inventing a total", () => {
   const render = extra => renderToStaticMarkup(createElement(activity.ActivityPagination, {
     page: 1, count: 10, pageSize: 10, hasNext: true, busy: false,
@@ -308,14 +356,20 @@ test("all host-owned pages and shared link icons omit the old arrow decorations"
   assert.doesNotMatch(renderFaucet(), /faucet-button-arrow/);
 });
 
-test("Birth step styles have one owner and never turn the step label into the old 26px circle", async () => {
+test("Birth styles have one owner, align to the dashboard, and switch to a sequential vertical journey on narrow panels", async () => {
   const base = await readFile(new URL("../apps/web/src/styles.css", import.meta.url), "utf8");
   const feedback = await readFile(new URL("../apps/web/src/feedback.css", import.meta.url), "utf8");
+  const progress = await readFile(new URL("../apps/web/src/transaction-progress.css", import.meta.url), "utf8");
   assert.doesNotMatch(base, /\.birth-progress-steps|\.birth-progress-heading/);
-  assert.match(feedback, /\.birth-progress-steps \.step-copy\s*\{[^}]*display: grid;[^}]*min-width: 0;/);
-  assert.doesNotMatch(feedback, /\.birth-progress-steps li > span/);
-  assert.match(feedback, /max-width: 1180px/);
-  assert.match(feedback, /max-width: 380px/);
+  assert.doesNotMatch(feedback, /\.birth-progress-steps|\.birth-progress-heading/);
+  assert.match(progress, /\.birth-progress-steps \.step-copy\s*\{[^}]*display: grid;[^}]*min-width: 0;/);
+  assert.doesNotMatch(progress, /\.birth-progress-steps li > span|max-width: 1180px|repeat\(2,/);
+  assert.match(progress, /width: 100%;\s*max-width: none;/);
+  assert.match(progress, /grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
+  assert.match(progress, /@container birth-journey \(max-width: 680px\)/);
+  assert.match(progress, /\.birth-progress-steps \{ grid-template-columns: minmax\(0, 1fr\)/);
+  assert.match(progress, /\.birth-progress-steps > li::after/);
+  assert.match(progress, /\.birth-progress \*::before, \.birth-progress \*::after \{ animation: none !important;/);
 });
 
 test("wallet transition styles discard the old snapshot instead of keeping a floating wallet on landing", async () => {
