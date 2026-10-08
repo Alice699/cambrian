@@ -1,6 +1,7 @@
 import type { BirthTransactionUpdate, CambrianTransactionSummary } from "@cambrian/sdk";
 import { birthPresentation, type FeedbackTone } from "../transaction-model";
 import { AddressDisplay } from "./AddressDisplay";
+import { UiIcon } from "./UiIcon";
 import { explorerLink } from "../explorer";
 export { explorerLink } from "../explorer";
 
@@ -39,23 +40,23 @@ export function BirthStatus({ update, account, onCheck, busy = false }: {
     <div className="birth-progress-heading" role={state.tone === "error" ? "alert" : "status"} aria-live="polite" aria-atomic="true">
       <StatusIcon tone={state.tone} spinning={state.tone === "pending"} />
       <div className="birth-progress-copy"><p>THRU WALLET / BIRTH</p><h2>{state.title}</h2><span>{update.error?.message ?? state.description}</span></div>
-      <span className={`feedback-badge is-${state.tone}`}>{state.label}</span>
+      <div className="birth-progress-summary"><span className={`feedback-badge is-${state.tone}`}>{state.label}</span><small>{state.step} of 4 steps complete</small></div>
     </div>
     <ol className="birth-progress-steps" aria-label="Transaction steps">
       {["Wallet approval", "Submit", "Confirm", "Read organism"].map((label, index) => {
         const complete = index < state.step;
         const current = index === state.step;
         return <li key={label} className={complete ? "is-complete" : current ? `is-current ${state.tone === "error" ? "is-error" : ""}` : ""} aria-current={current ? "step" : undefined}>
-          <span className="step-node" aria-hidden="true">{complete ? <svg viewBox="0 0 24 24"><path d="m6 12 4 4 8-8" /></svg> : current && state.tone === "error" ? "×" : index + 1}</span>
-          <span>{label}<small>{complete ? "Complete" : current ? state.tone === "error" ? "Not completed" : "In progress" : "Waiting"}</small></span>
+          <span className="step-node" aria-hidden="true">{complete ? <UiIcon name="check" /> : current && state.tone === "error" ? <UiIcon name="alert" /> : index + 1}</span>
+          <span className="step-copy"><strong>{label}</strong><small>{complete ? "Complete" : current ? state.tone === "error" ? "Not completed" : "In progress" : "Waiting"}</small></span>
         </li>;
       })}
     </ol>
     <div className="birth-progress-footer">
       {account ? <AddressDisplay value={account} label="Account" compact /> : <span>Your wallet approves every transaction</span>}
       <div className="birth-progress-links">
-        {update.signature && <a href={explorerLink("tx", update.signature)} target="_blank" rel="noreferrer">View transaction ↗</a>}
-        {update.organism && <a href={explorerLink("address", update.organism.address)} target="_blank" rel="noreferrer">View organism ↗</a>}
+        {update.signature && <a href={explorerLink("tx", update.signature)} target="_blank" rel="noreferrer"><UiIcon name="activity" />View transaction</a>}
+        {update.organism && <a href={explorerLink("address", update.organism.address)} target="_blank" rel="noreferrer"><UiIcon name="organism" />View organism</a>}
         {onCheck && state.tone === "pending" && ["submitted", "syncing"].includes(update.stage) && <button type="button" onClick={onCheck} disabled={busy}>{busy ? "Checking…" : "Check status"}</button>}
       </div>
     </div>

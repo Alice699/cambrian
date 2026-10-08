@@ -19,12 +19,14 @@ import { ConnectWalletAction } from "./components/WalletControl";
 import { DashboardHeader, DashboardPageActions, DashboardPageActionsContext } from "./components/DashboardHeader";
 import { FaucetButton } from "./components/FaucetButton";
 import { AddressDisplay } from "./components/AddressDisplay";
+import { ActivityCounters, RecentTransactions } from "./components/AccountActivity";
+import { ActivityPage } from "./components/ActivityPage";
 import { ReadStateCard } from "./components/ReadStateCard";
 import { UiIcon } from "./components/UiIcon";
 import { NetworkCard } from "./components/NetworkCard";
 import type { FaucetStage } from "./presentation-model";
 export { ReadStateCard } from "./components/ReadStateCard";
-import { BirthStatus, FaucetStatus, TransactionStatusBadge, TransactionNotice, StatusIcon, explorerLink } from "./components/TransactionFeedback";
+import { BirthStatus, FaucetStatus, TransactionNotice, StatusIcon, explorerLink } from "./components/TransactionFeedback";
 import { useOrganismCollection, type OrganismReadStatus } from "./hooks/useOrganisms";
 import { loadPendingBirth, savePendingBirth, clearPendingBirth } from "./birth-receipts";
 import markAsset from "./assets/cambrian-mark.svg";
@@ -179,7 +181,8 @@ function useAccountTransactions(refreshKey = 0, addressOverride?: string | null)
     }
 
     setState({ walletAddress: address, status: "loading", transactions: [], error: null });
-    listAccountTransactions(thru, address)
+    const controller = new AbortController();
+    listAccountTransactions(thru, address, { cambrianProgramId: appConfig.programId, signal: controller.signal })
       .then((result) => {
         if (!active) return;
         setState({
@@ -201,6 +204,7 @@ function useAccountTransactions(refreshKey = 0, addressOverride?: string | null)
 
     return () => {
       active = false;
+      controller.abort();
     };
   }, [address, thru, refreshKey]);
 
@@ -212,7 +216,7 @@ function ReadStateAction({ status, kind, onRetry }: { status: OrganismReadStatus
   if (status !== "empty") return null;
   if (kind === "organisms" && !appConfig.walletBirthEnabled) return <span className="read-state-paused"><UiIcon name="activity" />Birth paused · program upgrade pending</span>;
   if (kind === "activity" && onRetry) return <button className="state-action is-secondary" type="button" onClick={onRetry}><UiIcon name="retry" />Refresh activity</button>;
-  return <a className="state-action is-secondary" href="/app" onClick={event => navigateInternal("/app", event)}>Open ecosystem<UiIcon name="arrow" /></a>;
+  return <a className="state-action is-secondary" href="/app" onClick={event => navigateInternal("/app", event)}><UiIcon name="organism" />Open ecosystem</a>;
 }
 
 function organismStatusCopy(status: OrganismReadStatus, error: string | null) {
@@ -309,17 +313,8 @@ function ActivityPanel({ transactions, status, error, onRetry }: { transactions:
 
   return (
     <section className="activity-panel" id="activity" aria-labelledby="activity-title">
-      <p className="panel-label" id="activity-title">RECENT ACTIVITY</p>
-      {transactions.length > 0 ? transactions.slice(0, 3).map((transaction, index) => (
-        <div className="activity-row" key={transaction.signature || transaction.program + "-" + index}>
-          <div>
-            <strong>Transaction</strong>
-            {transaction.signature ? <AddressDisplay value={transaction.signature} kind="tx" compact /> : <span>Signature unavailable</span>}
-            <small>{transaction.slot ? "Slot " + transaction.slot.toString() : "Slot pending"}</small>
-          </div>
-          <TransactionStatusBadge status={transaction.status} vmError={transaction.vmError} />
-        </div>
-      )) : (
+      <p className="panel-label" id="activity-title">RECENT WALLET ACTIVITY</p>
+      {transactions.length > 0 ? <RecentTransactions transactions={transactions} /> : (
         <ReadStateCard title={statusCopy[0]} description={statusCopy[1]} tone={status === "error" ? "error" : "neutral"} loading={status === "loading" || status === "idle"} onRetry={onRetry} icon={status === "needs-wallet" ? "wallet" : "activity"} action={["needs-wallet", "empty"].includes(status) ? <ReadStateAction status={status} kind="activity" onRetry={onRetry} /> : undefined} />
       )}
     </section>
@@ -652,7 +647,7 @@ function DashboardContent({ onBalanceRefresh }: { onBalanceRefresh: () => void }
       </DashboardPageActions>
 
       <EcosystemStage onBirth={handleBirth} birthStage={birthStage} birthBusy={birthBusy} birthPending={birthPending} organism={organism} readStatus={organismRead.status} />
-      {!appConfig.walletBirthEnabled && <div className="ownership-upgrade-note" role="status"><StatusIcon tone="pending" /><div><strong>Wallet ownership upgrade pending</strong><p>New Births are paused until the updated program is deployed. Existing organisms remain on-chain; legacy fee-payer-controlled organisms require a reviewed ownership transfer.</p></div><a href={explorerLink("address", appConfig.programId)} target="_blank" rel="noreferrer">View program ↗</a></div>}
+      {!appConfig.walletBirthEnabled && <div className="ownership-upgrade-note" role="status"><StatusIcon tone="pending" /><div><strong>Wallet ownership upgrade pending</strong><p>New Births are paused until the updated program is deployed. Existing organisms remain on-chain; legacy fee-payer-controlled organisms require a reviewed ownership transfer.</p></div><a href={explorerLink("address", appConfig.programId)} target="_blank" rel="noreferrer">View program</a></div>}
       <BirthStatus update={birthUpdate} account={birthAccount} onCheck={birthPending ? handleBirth : undefined} busy={birthBusy} />
       {(faucetPending || faucetStage !== "idle" || notice?.startsWith("faucet")) && <FaucetStatus
         tone={notice?.startsWith("faucet") ? noticeTone(notice) : "pending"}
@@ -666,7 +661,7 @@ function DashboardContent({ onBalanceRefresh }: { onBalanceRefresh: () => void }
         <div className="stats-grid">
           <StatCard label="Energy" value={organism ? organism.state.energy.toString() : "—"} loading={organismRead.status === "loading"} />
           <StatCard label="Vitality" value={organism ? organism.state.vitality.toString() : "—"} loading={organismRead.status === "loading"} />
-          <StatCard label="On-chain actions" value={activityRead.status === "empty" ? "0" : activityRead.transactions.length > 0 ? activityRead.transactions.length.toString() : "—"} loading={activityRead.status === "loading"} />
+          <ActivityCounters transactions={activityRead.transactions} status={activityRead.status} />
         </div>
       </section>
 
@@ -714,41 +709,6 @@ function OrganismsPage() {
       ) : (
         <ReadStateCard title={statusCopy[0]} description={statusCopy[1]} tone={organismRead.status === "error" ? "error" : "neutral"} loading={organismRead.status === "loading" || organismRead.status === "idle"} onRetry={() => setRefreshKey(key => key + 1)} icon={organismRead.status === "needs-wallet" ? "wallet" : "organism"} action={["needs-wallet", "empty"].includes(organismRead.status) ? <ReadStateAction status={organismRead.status} kind="organisms" /> : undefined} />
       )}
-    </>
-  );
-}
-
-function ActivityTimeline({ transactions }: { transactions: CambrianTransactionSummary[] }) {
-  return (
-    <div className="activity-timeline">
-      {transactions.map((transaction, index) => (
-        <div className="timeline-item" key={transaction.signature || transaction.program + "-" + index}>
-          <div className="timeline-marker"><TransactionStatusBadge status={transaction.status} vmError={transaction.vmError} /></div>
-          <div className="timeline-copy">
-            <strong>Transaction</strong>
-            {transaction.signature ? <AddressDisplay value={transaction.signature} kind="tx" compact /> : <span>Signature unavailable</span>}
-            <small>{transaction.slot ? "Slot " + transaction.slot.toString() : "Slot unavailable"} / {transaction.instructionBytes} instruction bytes</small>
-          </div>
-          <a href={transaction.signature ? explorerLink("tx", transaction.signature) : explorerLink("address", transaction.program)} target="_blank" rel="noreferrer">Open explorer</a>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function ActivityPage() {
-  const [refreshKey, setRefreshKey] = useState(0);
-  const activityRead = useAccountTransactions(refreshKey);
-  const statusCopy = activityStatusCopy(activityRead.status, activityRead.error);
-
-  return (
-    <>
-      <DashboardPageActions><span className="connected-badge"><i /> {activityRead.transactions.length > 0 ? activityRead.transactions.length + " READ" : "RPC READ"}</span></DashboardPageActions>
-      <section className="activity-page-card">
-        <div className="activity-card-heading"><div><p className="panel-label">RECENT ACTIVITY</p><h2>What happened next</h2></div><span>BETANET / LIVE READ</span></div>
-        {activityRead.transactions.length > 0 ? <ActivityTimeline transactions={activityRead.transactions} /> : <ReadStateCard title={statusCopy[0]} description={statusCopy[1]} tone={activityRead.status === "error" ? "error" : "neutral"} loading={activityRead.status === "loading" || activityRead.status === "idle"} onRetry={() => setRefreshKey(key => key + 1)} icon={activityRead.status === "needs-wallet" ? "wallet" : "activity"} action={["needs-wallet", "empty"].includes(activityRead.status) ? <ReadStateAction status={activityRead.status} kind="activity" onRetry={() => setRefreshKey(key => key + 1)} /> : undefined} />}
-      </section>
-      <section className="trail-callout"><span>ON-CHAIN TRANSPARENCY</span><p>Nothing disappears behind a spinner. When a transaction is submitted, its state and explorer trail remain visible.</p><a href="https://scan.thru.org/" target="_blank" rel="noreferrer">Open Thru explorer</a></section>
     </>
   );
 }

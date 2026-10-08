@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
 
 // Render real React components, without a browser, passkey, or network writes.
-let server, components, app, faucet, address, wallet, network, presentation, navigation;
+let server, components, app, faucet, address, wallet, network, presentation, navigation, activity;
 before(async () => {
   server = await createServer({ root: fileURLToPath(new URL("../apps/web", import.meta.url)), server: { middlewareMode: true, hmr: false, watch: null }, appType: "custom", logLevel: "silent" });
   components = await server.ssrLoadModule("/src/components/TransactionFeedback.tsx");
@@ -19,10 +19,65 @@ before(async () => {
   network = await server.ssrLoadModule("/src/components/NetworkCard.tsx");
   presentation = await server.ssrLoadModule("/src/presentation-model.ts");
   navigation = await server.ssrLoadModule("/src/navigation.ts");
+  activity = await server.ssrLoadModule("/src/components/AccountActivity.tsx");
 });
 after(async () => { await server?.close(); });
 
 const renderBirth = (stage, extra = {}) => renderToStaticMarkup(createElement(components.BirthStatus, { account: "account-A", update: { stage, ...extra } }));
+
+const activityReceipt = (extra = {}) => ({
+  signature: "public-account-setup-signature", feePayer: "public-fee-payer", program: "public-wallet-program",
+  slot: 622275n, instructionBytes: 375, status: "confirmed", vmError: 0,
+  activity: { kind: "wallet-create", category: "wallet", label: "Wallet created", description: "Account creation · Passkey registration", cambrianActionCount: 0 },
+  ...extra,
+});
+
+test("new wallet render separates zero Cambrian actions from one wallet setup transaction", () => {
+  const transactions = [activityReceipt()];
+  const counters = renderToStaticMarkup(createElement(activity.ActivityCounters, { transactions, status: "ready" }));
+  assert.match(counters, /Cambrian actions<\/p><strong>0<\/strong>/);
+  assert.match(counters, /Wallet transactions<\/p><strong>1<\/strong>/);
+  assert.match(counters, /Confirmed in recent activity/);
+  const recent = renderToStaticMarkup(createElement(activity.RecentTransactions, { transactions }));
+  assert.match(recent, /Wallet created/);
+  assert.match(recent, /Account creation · Passkey registration/);
+  assert.match(recent, /Confirmed/);
+  assert.match(recent, /\/tx\/public-account-setup-signature\?rpc=/);
+  assert.doesNotMatch(recent, /<strong>Transaction<\/strong>|Organism birth/);
+});
+
+test("pending and failed action renders retain explorer evidence and do not raise the successful action counter", () => {
+  const transactions = ["pending", "failed"].map(status => activityReceipt({ status, vmError: status === "failed" ? -763 : null,
+    activity: { kind: "birth", category: "cambrian", label: "Organism birth", description: "Cambrian organism action", cambrianActionCount: 1 } }));
+  const counters = renderToStaticMarkup(createElement(activity.ActivityCounters, { transactions, status: "ready" }));
+  assert.match(counters, /Cambrian actions<\/p><strong>0<\/strong>/);
+  assert.match(counters, /Wallet transactions<\/p><strong>2<\/strong>/);
+  const timeline = renderToStaticMarkup(createElement(activity.ActivityTimeline, { transactions }));
+  assert.match(timeline, /transaction-status is-pending/);
+  assert.match(timeline, /transaction-status is-error/);
+  assert.match(timeline, /VM error -763/);
+  assert.equal((timeline.match(/Open explorer<\/a>/g) ?? []).length, 2);
+});
+
+test("unavailable classification never fabricates a zero Cambrian total, while its known receipt stays visible", () => {
+  const transactions = [activityReceipt({ activity: { kind: "unknown", category: "unknown", label: "Network transaction", description: "Transaction details unavailable", cambrianActionCount: 0 } })];
+  const counters = renderToStaticMarkup(createElement(activity.ActivityCounters, { transactions, status: "ready" }));
+  assert.match(counters, /Cambrian actions<\/p><strong>—<\/strong>/);
+  assert.match(counters, /Wallet transactions<\/p><strong>1<\/strong>/);
+  assert.match(counters, /Some details are unavailable/);
+  const history = renderToStaticMarkup(createElement(activity.RecentTransactions, { transactions }));
+  assert.match(history, /Transaction details unavailable/);
+  assert.match(history, /Confirmed/);
+});
+
+test("loading, error, and disconnected activity counters do not display invented zeroes", () => {
+  for (const status of ["idle", "loading", "error", "needs-wallet"]) {
+    const html = renderToStaticMarkup(createElement(activity.ActivityCounters, { transactions: [], status }));
+    assert.doesNotMatch(html, /<strong>0<\/strong>/);
+    if (status === "idle" || status === "loading") assert.match(html, /Loading cambrian actions/);
+    else assert.match(html, /<strong>—<\/strong>/);
+  }
+});
 
 test("pending Birth render keeps the yellow state, status link, and four real steps", () => {
   const html = renderBirth("submitted", { signature: "public-signature" });
@@ -43,6 +98,38 @@ test("completed Birth render is green with all four steps complete", () => {
   assert.match(html, /birth-progress is-success/);
   assert.equal((html.match(/class="is-complete"/g) ?? []).length, 4);
   assert.doesNotMatch(html, /aria-current="step"/);
+  assert.match(html, /4 of 4 steps complete/);
+  assert.equal((html.match(/class="step-copy"/g) ?? []).length, 4);
+});
+
+test("Birth details use consistent icon buttons with public receipt links and no arrow glyphs", () => {
+  const html = renderBirth("confirmed", { signature: "public-signature", organism: { address: "public-organism" } });
+  assert.match(html, /birth-progress-summary/);
+  assert.match(html, /\/tx\/public-signature\?rpc=/);
+  assert.match(html, /\/address\/public-organism\?rpc=/);
+  assert.match(html, /View transaction<\/a>/);
+  assert.match(html, /View organism<\/a>/);
+  assert.doesNotMatch(html, /[↗↖↘↙→←⇒➜]/);
+});
+
+test("pagination describes only known pages and uses clear text controls, without inventing a total", () => {
+  const render = extra => renderToStaticMarkup(createElement(activity.ActivityPagination, {
+    page: 1, count: 10, pageSize: 10, hasNext: true, busy: false,
+    onPrevious: () => {}, onNext: () => {}, ...extra,
+  }));
+  const first = render({});
+  assert.match(first, /aria-label="Activity pagination"/);
+  assert.match(first, /10 transactions on this page/);
+  assert.match(first, /10 per page/);
+  assert.match(first, /disabled="" aria-label="Previous activity page"/);
+  assert.doesNotMatch(first, /disabled="" aria-label="Next activity page"|End of history|Page 1 of/);
+  const last = render({ page: 2, count: 1, hasNext: false });
+  assert.match(last, /1 transaction on this page/);
+  assert.match(last, /End of history/);
+  assert.match(last, /disabled="" aria-label="Next activity page"/);
+  const pending = render({ page: 2, busy: true });
+  assert.equal((pending.match(/disabled=""/g) ?? []).length, 2);
+  assert.doesNotMatch(first + last + pending, /[↗↖↘↙→←⇒➜]/);
 });
 test("failed Birth render is red, announces the error, and retains explorer evidence", () => {
   const html = renderBirth("failed", { signature: "public-signature", error: new Error("VM execution failed") });
@@ -209,6 +296,26 @@ test("each application route still renders the official wallet launcher", () => 
     assert.equal((html.match(/class="wallet-launcher /g) ?? []).length, 1);
     assert.doesNotMatch(html, /class="landing-page"/);
   }
+});
+
+test("all host-owned pages and shared link icons omit the old arrow decorations", async () => {
+  for (const path of ["/", "/app", "/app/organisms", "/app/activity", "/app/learn"]) {
+    assert.doesNotMatch(renderRoute(path), /[↗↖↘↙→←⇒➜]/);
+  }
+  const iconSource = await readFile(new URL("../apps/web/src/components/UiIcon.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(iconSource, /name === "arrow"|m0-6-9 9|M4 12h16m-6-6/);
+  assert.match(iconSource, /name === "external".*<rect/);
+  assert.doesNotMatch(renderFaucet(), /faucet-button-arrow/);
+});
+
+test("Birth step styles have one owner and never turn the step label into the old 26px circle", async () => {
+  const base = await readFile(new URL("../apps/web/src/styles.css", import.meta.url), "utf8");
+  const feedback = await readFile(new URL("../apps/web/src/feedback.css", import.meta.url), "utf8");
+  assert.doesNotMatch(base, /\.birth-progress-steps|\.birth-progress-heading/);
+  assert.match(feedback, /\.birth-progress-steps \.step-copy\s*\{[^}]*display: grid;[^}]*min-width: 0;/);
+  assert.doesNotMatch(feedback, /\.birth-progress-steps li > span/);
+  assert.match(feedback, /max-width: 1180px/);
+  assert.match(feedback, /max-width: 380px/);
 });
 
 test("wallet transition styles discard the old snapshot instead of keeping a floating wallet on landing", async () => {

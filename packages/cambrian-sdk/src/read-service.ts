@@ -4,11 +4,13 @@ import {
   FilterParamValue,
   PageRequest,
   Pubkey,
+  TransactionView,
   type Account,
   type Thru,
 } from "@thru/sdk";
 import type { CambrianConfig } from "@cambrian/config";
 import { decodeCambrianOrganism, type CambrianOrganismState } from "./abi.js";
+import { identifyAccountTransaction, type AccountTransactionActivity } from "./activity.js";
 
 export interface CambrianAccountSnapshot {
   address: string;
@@ -44,6 +46,7 @@ export interface CambrianTransactionSummary {
   instructionBytes: number;
   status: "confirmed" | "pending" | "failed" | "unavailable";
   vmError: number | null;
+  activity: AccountTransactionActivity;
 }
 
 export interface CambrianTransactionList {
@@ -173,28 +176,52 @@ export async function listWalletCambrianOrganisms(
 export async function listAccountTransactions(
   client: Thru,
   address: string,
-  options: { pageSize?: number; pageToken?: string } = {},
+  options: { pageSize?: number; pageToken?: string; cambrianProgramId?: string; signal?: AbortSignal } = {},
 ): Promise<CambrianTransactionList> {
+  options.signal?.throwIfAborted();
   const pageSize = Math.min(Math.max(options.pageSize ?? 25, 1), 100);
   const response = await client.transactions.listForAccount(address, {
+    transactionOptions: { view: TransactionView.FULL },
     page: new PageRequest({
       pageSize,
       pageToken: options.pageToken,
     }),
   });
 
+  options.signal?.throwIfAborted();
+  const transactions: CambrianTransactionSummary[] = [];
+  // Some index responses contain metadata only. Hydrate in small read-only batches;
+  // a failed detail lookup must not erase its public receipt or confirmation status.
+  for (let offset = 0; offset < response.transactions.length; offset += 4) {
+    options.signal?.throwIfAborted();
+    const batch = await Promise.all(response.transactions.slice(offset, offset + 4).map(async listed => {
+      let transaction = listed;
+      const signature = listed.getSignature()?.toThruFmt();
+      if (!listed.instructionData?.length && signature) {
+        try {
+          const full = await client.transactions.get(signature, { view: TransactionView.FULL });
+          if (full.getSignature()?.toThruFmt() === signature) transaction = full;
+        } catch { /* Keep the listed receipt; details remain explicitly unavailable. */ }
+      }
+      const execution = transaction.executionResult ?? listed.executionResult;
+      const status = execution ? execution.vmError === 0 ? "confirmed" as const : "failed" as const
+        : signature ? "pending" as const : "unavailable" as const;
+      return {
+        signature: transaction.getSignature()?.toThruFmt() ?? null,
+        feePayer: transaction.feePayer.toThruFmt(),
+        program: transaction.program.toThruFmt(),
+        slot: transaction.slot ?? listed.slot ?? null,
+        instructionBytes: transaction.instructionData?.length ?? transaction.instructionDataSize ?? 0,
+        status,
+        vmError: execution?.vmError ?? null,
+        activity: identifyAccountTransaction(transaction, { walletAddress: address, cambrianProgramId: options.cambrianProgramId, confirmed: status === "confirmed" }),
+      };
+    }));
+    options.signal?.throwIfAborted();
+    transactions.push(...batch);
+  }
   return {
-    transactions: response.transactions.map((transaction) => ({
-      signature: transaction.getSignature()?.toThruFmt() ?? null,
-      feePayer: transaction.feePayer.toThruFmt(),
-      program: transaction.program.toThruFmt(),
-      slot: transaction.slot ?? null,
-      instructionBytes: transaction.instructionData?.length ?? transaction.instructionDataSize ?? 0,
-      status: transaction.executionResult
-        ? transaction.executionResult.vmError === 0 ? "confirmed" as const : "failed" as const
-        : transaction.getSignature() ? "pending" as const : "unavailable" as const,
-      vmError: transaction.executionResult?.vmError ?? null,
-    })),
+    transactions,
     nextPageToken: response.page?.nextPageToken,
   };
 }

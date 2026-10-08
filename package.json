@@ -12,7 +12,7 @@
     "api:dev": "npm --workspace @cambrian/api run dev",
     "api:typecheck": "npm --workspace @cambrian/api run typecheck",
     "build": "vite build apps/web",
-    "test": "node --test --experimental-strip-types --import ./tests/register-typescript.mjs tests/cambrian-sdk.test.ts tests/birth-flow.test.ts tests/read-service.test.ts tests/wallet-ownership.test.ts tests/transaction-ui.test.ts tests/ui-render.test.mjs tests/wallet-navigation.test.mjs tests/faucet.test.ts",
+    "test": "node --test --experimental-strip-types --import ./tests/register-typescript.mjs tests/cambrian-sdk.test.ts tests/birth-flow.test.ts tests/read-service.test.ts tests/activity.test.ts tests/wallet-ownership.test.ts tests/transaction-ui.test.ts tests/ui-render.test.mjs tests/wallet-navigation.test.mjs tests/faucet.test.ts",
     "typecheck": "tsc -p apps/web/tsconfig.json --noEmit",
     "preview": "vite preview apps/web --host 127.0.0.1"
   },

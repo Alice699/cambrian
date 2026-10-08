@@ -16,6 +16,9 @@ and account activity, and makes the organism transaction lifecycle visible.
 - Green confirmed, yellow pending, and red failed feedback with text and icons
 - Faucet API with validation, cooldown, rate limits, and idempotent claims
 - Compact public addresses with full-value copy and network-aware explorer links
+- Named wallet setup, transfers, and Cambrian actions, decoded from on-chain instructions
+- Separate recent wallet transaction and confirmed Cambrian action counts; failed/pending requests stay visible without counting as successful actions
+- Cursor-paginated Activity with 10 records per page, cached back navigation, and wallet-scoped refresh/retry
 
 Cambrian no longer offers a local wallet. Previously stored local vaults are
 not erased by this change; the removed source remains recoverable in Git history.

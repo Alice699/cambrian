@@ -41,7 +41,7 @@ export function WalletLauncherButton({ presentation, expanded = false, onClick }
     aria-label={presentation.connected ? `Open official Thru Wallet menu for ${presentation.label}` : presentation.label} title={presentation.detail}>
     <ThruLogo decorative />
     <span className="wallet-launcher-copy"><strong title={presentation.label}>{presentation.label}</strong><small>{presentation.detail}</small></span>
-    <span className="wallet-launcher-trailing">{presentation.busy ? <StatusIcon tone="pending" spinning /> : <UiIcon name={presentation.connected ? "chevron" : "arrow"} />}</span>
+    {(presentation.busy || presentation.connected) && <span className="wallet-launcher-trailing">{presentation.busy ? <StatusIcon tone="pending" spinning /> : <UiIcon name="chevron" />}</span>}
   </button>;
 }
 
@@ -92,7 +92,7 @@ export function OfficialWalletControl({ refreshKey = 0, scopeKey = "" }: { refre
 export function ConnectWalletAction() {
   const { onConnect, isConnecting, checking, error } = useOfficialConnect();
   return <div className="connect-wallet-action"><button className="state-action connect-thru-action" type="button" onClick={() => void onConnect()} disabled={isConnecting} aria-busy={isConnecting}>
-    <ThruLogo decorative /><span>{checking ? "Checking Thru Wallet…" : isConnecting ? "Waiting for Thru Wallet…" : "Connect Thru Wallet"}</span>{isConnecting ? <StatusIcon tone="pending" spinning /> : <UiIcon name="arrow" />}
+    <ThruLogo decorative /><span>{checking ? "Checking Thru Wallet…" : isConnecting ? "Waiting for Thru Wallet…" : "Connect Thru Wallet"}</span>{isConnecting && <StatusIcon tone="pending" spinning />}
   </button>{error && <p className="wallet-connection-error" role="alert">{error}</p>}</div>;
 }
 

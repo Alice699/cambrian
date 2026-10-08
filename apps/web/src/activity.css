@@ -1,0 +1,69 @@
+/* Wallet history uses real RPC cursors, with a quiet, receipt-first layout. */
+.activity-page-card { padding: 26px; border: 1px solid #dce2d3; border-radius: 18px; background: #fbfcf7; box-shadow: 0 4px 18px #2d3a2605; scroll-margin-top: 24px; }
+.activity-card-heading { align-items: flex-start; gap: 20px; padding-bottom: 21px; border-bottom: 1px solid #e3e7dc; }
+.activity-card-heading > div { min-width: 0; }
+.activity-card-heading .panel-label { color: #7b8971; font-size: 9px; letter-spacing: 1.3px; }
+.activity-card-heading h2 { margin: 8px 0 7px; color: #293c28; font: 600 25px/32px "Space Grotesk", sans-serif; letter-spacing: -.65px; }
+.activity-scope-note { max-width: 620px; margin: 0; color: #718068; font: 400 12px/20px "IBM Plex Sans", sans-serif; }
+.activity-refresh { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; gap: 7px; min-height: 36px; padding: 8px 12px; border: 1px solid #dce4d4; border-radius: 9px; background: #f5f8ef; color: #526d45; font: 500 11px/16px "IBM Plex Sans", sans-serif; cursor: pointer; }
+.activity-refresh > .ui-icon { width: 14px; height: 14px; flex-basis: 14px; }
+.activity-refresh:hover:not(:disabled) { background: #edf4e5; border-color: #a6bb9a; }
+.activity-refresh:disabled { color: #93a089; cursor: wait; }
+.activity-history-body { min-width: 0; transition: opacity .18s; }
+.activity-history-body.is-updating { opacity: .6; }
+.activity-history-body > .data-state-card { margin: 18px 0; border: 0; background: transparent; box-shadow: none; }
+.activity-timeline { margin: 0; }
+.activity-timeline .timeline-item { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 17px; min-height: 112px; padding: 20px 0; border-top: 0; border-bottom: 1px solid #e7ebdf; }
+.activity-timeline .timeline-item:last-child { border-bottom: 0; }
+.activity-type-icon { display: grid; width: 42px; height: 42px; align-self: start; place-items: center; margin-top: 1px; border: 1px solid #dde5d4; border-radius: 12px; background: #eff4e7; color: #70875d; }
+.activity-type-icon > .ui-icon { width: 21px; height: 21px; }
+.timeline-copy { display: grid; min-width: 0; gap: 5px; }
+.timeline-copy > strong { color: #30452c; font: 600 15px/21px "IBM Plex Sans", sans-serif; }
+.timeline-copy > .activity-description { margin: 0; color: #7c8971; font: 400 11px/17px "IBM Plex Sans", sans-serif; }
+.activity-record-meta { display: flex; align-items: center; flex-wrap: wrap; min-width: 0; gap: 7px 13px; margin-top: 4px; }
+.activity-record-meta > small { margin: 0; color: #88957d; font: 400 10px/15px "IBM Plex Sans", sans-serif; letter-spacing: 0; text-transform: none; white-space: nowrap; }
+.timeline-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 13px; }
+.timeline-actions .transaction-status { padding: 4px 9px; font-size: 10px !important; line-height: 15px !important; }
+.timeline-actions .activity-explorer-link { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 5px 9px; border: 1px solid #e0e5d8; border-radius: 7px; background: #f7f9f1; color: #657b56; font: 500 10px/16px "IBM Plex Sans", sans-serif; text-decoration: none; white-space: nowrap; }
+.activity-explorer-link > .ui-icon { width: 13px; height: 13px; flex-basis: 13px; }
+.timeline-actions .activity-explorer-link:hover { background: #eef4e5; border-color: #b9cbb0; }
+.activity-row .activity-record-meta { display: flex; gap: 6px 11px; }
+.activity-row .activity-record-meta > small { font-size: 10px; }
+.activity-load-status { display: flex; align-items: center; gap: 8px; color: var(--feedback-pending); font: 400 11px/18px "IBM Plex Sans", sans-serif; }
+.activity-load-status > .status-icon { width: 22px; height: 22px; flex-basis: 22px; margin: 6px 0 12px; }
+.activity-load-status .status-icon svg { width: 16px; height: 16px; }
+.activity-load-status > span:not(.sr-only) { margin: 6px 0 12px; }
+.activity-pagination { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 18px; padding-top: 19px; margin-top: 5px; border-top: 1px solid #e2e8da; }
+.activity-pagination-info { display: grid; gap: 4px; }
+.activity-pagination-info > strong { color: #63785a; font: 500 11px/17px "IBM Plex Sans", sans-serif; }
+.activity-pagination-info > span { color: #93a087; font: 400 10px/15px "IBM Plex Sans", sans-serif; }
+.activity-pagination-controls { display: flex; align-items: center; gap: 7px; }
+.activity-pagination-controls > button { min-height: 36px; padding: 8px 12px; border: 1px solid #dce4d3; border-radius: 8px; background: #f5f8ef; color: #527047; font: 500 11px/17px "IBM Plex Sans", sans-serif; cursor: pointer; transition: border-color .15s, background .15s; }
+.activity-pagination-controls > button:hover:not(:disabled) { border-color: #a3b998; background: #eaf2e0; }
+.activity-pagination-controls > button:disabled { border-color: #e6ebdf; background: #fafbf6; color: #a5af9c; cursor: not-allowed; }
+.activity-page-number { display: grid; min-height: 36px; min-width: 62px; place-items: center; padding: 8px 11px; border: 1px solid #d1deca; border-radius: 8px; background: #eaf2e1; color: #3c6032; font: 600 11px/17px "IBM Plex Sans", sans-serif; }
+.activity-page-error { display: flex; align-items: center; gap: 12px; padding: 13px 15px; margin-bottom: 15px; border: 1px solid var(--feedback-error-line); border-radius: 10px; background: #fff6f3; color: var(--feedback-error); }
+.activity-page-error > .ui-icon { width: 18px; height: 18px; flex: 0 0 18px; }
+.activity-page-error > div { flex: 1; min-width: 0; }
+.activity-page-error strong { font: 600 12px/18px "IBM Plex Sans", sans-serif; }
+.activity-page-error p { margin: 3px 0 0; color: #a17e70; font: 400 11px/17px "IBM Plex Sans", sans-serif; overflow-wrap: anywhere; }
+.activity-page-error > button { flex: 0 0 auto; min-height: 32px; padding: 6px 10px; border: 1px solid #e3c3b8; border-radius: 7px; background: #fffcf9; color: #9a5145; font: 500 11px/17px "IBM Plex Sans", sans-serif; cursor: pointer; }
+.activity-page-card :is(a, button):focus-visible { outline: 2px solid #62896b; outline-offset: 3px; }
+@media (max-width: 980px) { .timeline-actions { align-items: flex-end; flex-direction: column; gap: 9px; } }
+@media (max-width: 620px) {
+  .activity-page-card { padding: 19px; }
+  .activity-card-heading { display: flex; gap: 12px; padding-bottom: 18px; }
+  .activity-card-heading h2 { font-size: 22px; line-height: 28px; }
+  .activity-refresh { min-height: 34px; padding: 7px 9px; font-size: 10px; }
+  .activity-timeline .timeline-item { grid-template-columns: 34px minmax(0, 1fr); gap: 10px 12px; padding: 18px 0; }
+  .activity-type-icon { width: 34px; height: 34px; border-radius: 10px; }
+  .activity-type-icon > .ui-icon { width: 18px; height: 18px; }
+  .timeline-actions { grid-column: 2; align-items: center; flex-direction: row; justify-content: flex-start; gap: 10px; }
+  .activity-record-meta { gap: 6px 11px; }
+  .activity-pagination { align-items: flex-start; gap: 14px; }
+  .activity-pagination-controls { justify-content: space-between; width: 100%; }
+  .activity-pagination-controls > button { flex: 1; }
+  .activity-page-error { align-items: flex-start; flex-wrap: wrap; }
+  .activity-page-error > button { margin-left: 30px; }
+}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .activity-history-body, .activity-pagination-controls > button { transition: none; } }

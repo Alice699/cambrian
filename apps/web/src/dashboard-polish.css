@@ -103,7 +103,6 @@
 .faucet-button-copy { display: grid; min-width: 0; gap: 3px; }
 .faucet-button-copy strong { color: inherit; font: 600 12px/16px "IBM Plex Sans", sans-serif; white-space: nowrap; }
 .faucet-button-copy small { color: #61745f; font: 400 10px/13px "IBM Plex Sans", sans-serif; white-space: nowrap; }
-.faucet-button .faucet-button-arrow { width: 14px; height: 14px; flex-basis: 14px; margin-left: 3px; color: #93a48c; }
 .faucet-button.is-pending { border-color: #e5d39f; background: #fff8e8; color: #8b630d; }
 .faucet-button.is-pending .faucet-button-icon { color: #997019; background: #f7edcf; }
 .faucet-button.is-pending small { color: #8a713b; }

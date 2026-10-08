@@ -195,45 +195,15 @@ button { cursor: pointer; }
 .birth-button:hover { background: #ad5945; }
 .birth-button:disabled { cursor: wait; opacity: .68; }
 
-.birth-progress {
-  margin-top: 18px;
-  padding: 22px 26px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: #faf8f1;
-}
-.birth-progress.is-error { border-color: #cfa698; }
-.birth-progress-heading { display: flex; align-items: start; justify-content: space-between; gap: 18px; }
-.birth-progress-heading > div { min-width: 0; }
-.birth-progress-heading p { margin: 0 0 8px; color: var(--moss); font-size: 10px; font-weight: 600; letter-spacing: 1px; }
-.birth-progress-heading h2 { margin: 0 0 6px; font-size: 21px; line-height: 1.3; }
-.birth-progress-heading span { display: block; max-width: 650px; color: var(--moss); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
-.birth-progress-heading small { flex-shrink: 0; padding-top: 3px; color: var(--moss); font-size: 12px; }
-.birth-progress-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 22px 0 0; padding: 0; list-style: none; }
-.birth-progress-steps li { display: flex; align-items: center; gap: 9px; color: #7a827b; font-size: 12px; }
-.birth-progress-steps li > span { display: grid; width: 26px; height: 26px; flex-shrink: 0; place-items: center; border: 1px solid var(--line); border-radius: 50%; font-size: 12px; }
-.birth-progress-steps .is-current { color: var(--ink); font-weight: 600; }
-.birth-progress-steps .is-current > span { border-color: var(--moss); background: var(--ink); color: var(--on-stage); }
-.birth-progress-steps .is-complete { color: var(--moss); }
-.birth-progress-steps .is-complete > span { border-color: #d2ddcf; background: #e3ebdf; color: var(--moss); }
-.birth-progress-links { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 18px; }
-.birth-progress-links a { color: var(--moss); font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
-.birth-progress-links a:hover { color: var(--ink); }
-@media (max-width: 700px) {
-  .birth-progress { padding: 20px; }
-  .birth-progress-heading { flex-direction: column; gap: 10px; }
-  .birth-progress-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 14px; }
-}
-
 .signal-section { margin-top: 42px; }
 .signal-section h2 {
   margin: 0 0 15px;
   font: 600 32px/40px "IBM Plex Sans", sans-serif;
   letter-spacing: -.2px;
 }
-.stats-grid { display: grid; grid-template-columns: repeat(3, 220px); gap: 16px; }
+.stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 220px)); gap: 16px; }
 .stat-card {
-  height: 132px;
+  min-height: 140px;
   padding: 20px;
   border-radius: 16px;
   background: var(--surface);
@@ -241,6 +211,8 @@ button { cursor: pointer; }
 }
 .stat-card p { margin: 0; color: var(--moss); font: 600 11px/16px "IBM Plex Sans", sans-serif; }
 .stat-card strong { display: block; margin-top: 18px; font: 700 32px/40px "Space Grotesk", sans-serif; }
+.stat-card.is-activity strong { margin-top: 10px; }
+.stat-card.is-activity small { display: block; margin-top: 5px; color: #69736d; font: 400 11px/16px "IBM Plex Sans", sans-serif; }
 
 .dashboard-panels { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(320px, 1fr); gap: 20px; margin-top: 40px; }
 .organisms-panel, .activity-panel { min-height: 260px; border-radius: 18px; box-shadow: var(--shadow); }
@@ -260,9 +232,12 @@ button { cursor: pointer; }
 .organisms-thumbnail { position: absolute; top: 42px; right: 50px; display: block; width: 82px; height: 82px; }
 .organism-read-state h2 { margin: 22px 0 0; font: 600 28px/34px "Space Grotesk", sans-serif; letter-spacing: -1px; }
 .activity-panel { padding: 23px; border: 1px solid var(--line); background: var(--canvas); }
-.activity-row { display: flex; align-items: flex-start; gap: 14px; margin-top: 28px; }
+.activity-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-top: 28px; }
 .activity-row:first-of-type { margin-top: 28px; }
 .activity-row > div { display: grid; gap: 2px; }
+.activity-row > div:first-child { min-width: 0; flex: 1; }
+.activity-description { margin: 0 0 7px; color: #69736d; font: 400 12px/18px "IBM Plex Sans", sans-serif; letter-spacing: 0; }
+.activity-row small { margin-top: 4px; color: #69736d; font: 400 11px/16px "IBM Plex Sans", sans-serif; }
 .activity-row strong { font: 400 16px/24px "IBM Plex Sans", sans-serif; }
 .activity-row span { color: var(--moss); font: 600 11px/16px "IBM Plex Sans", sans-serif; letter-spacing: 1.1px; }
 .activity-read-state { display: grid; gap: 7px; margin-top: 28px; }
@@ -323,11 +298,14 @@ button { cursor: pointer; }
 .activity-card-heading h2 { margin: 10px 0 0; font: 600 28px/34px "Space Grotesk", sans-serif; letter-spacing: -1px; }
 .activity-card-heading > span { color: var(--moss); font: 600 10px/14px "IBM Plex Sans", sans-serif; letter-spacing: 1px; }
 .activity-timeline { margin-top: 18px; }
-.timeline-item { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 16px; align-items: center; min-height: 92px; border-top: 1px solid rgba(23, 33, 28, .1); }
+.timeline-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 18px 0; min-height: 92px; border-top: 1px solid rgba(23, 33, 28, .1); }
 .timeline-marker { position: relative; display: grid; place-items: center; align-self: stretch; }
 .timeline-marker::after { position: absolute; top: 50%; bottom: -50%; left: 11px; width: 1px; content: ""; background: rgba(69, 96, 75, .22); }
 .timeline-item:last-child .timeline-marker::after { display: none; }
-.timeline-copy { display: grid; gap: 3px; }
+.timeline-copy { display: grid; gap: 3px; min-width: 0; }
+.timeline-actions { display: grid; justify-items: end; gap: 12px; }
+.timeline-actions a { color: var(--oxide); font: 600 12px/18px "IBM Plex Sans", sans-serif; }
+.activity-scope-note { max-width: 680px; margin: 14px 0 8px; color: #69736d; font: 400 13px/20px "IBM Plex Sans", sans-serif; }
 .timeline-copy strong { font: 600 17px/22px "IBM Plex Sans", sans-serif; }
 .timeline-copy span { color: var(--moss); font-size: 14px; line-height: 20px; }
 .timeline-copy small { color: #7d877f; font: 600 10px/14px "IBM Plex Sans", sans-serif; letter-spacing: .8px; text-transform: uppercase; }
@@ -660,7 +638,7 @@ button { cursor: pointer; }
   .stage-viewer { grid-column: 2; grid-row: 1 / span 2; }
   .birth-button { grid-column: 1; grid-row: 2; justify-self: start; }
   .stage-meta { margin-top: 14px; }
-  .stats-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dashboard-panels { grid-template-columns: 1fr; }
 }
 @media (max-width: 720px) {
@@ -708,8 +686,8 @@ button { cursor: pointer; }
   .trait-section, .learn-grid { grid-template-columns: 1fr; }
   .activity-page-card { padding: 22px 18px 8px; }
   .activity-card-heading { display: grid; }
-  .timeline-item { grid-template-columns: 24px minmax(0, 1fr); gap: 12px; }
-  .timeline-item > a { grid-column: 2; margin-top: -28px; justify-self: end; }
+  .timeline-item { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .timeline-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .trail-callout { display: block; }
   .trail-callout p { margin: 12px 0 16px; }
   .learn-feature { display: block; padding: 24px; }

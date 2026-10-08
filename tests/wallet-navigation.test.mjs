@@ -6,6 +6,7 @@ import { JSDOM } from "jsdom";
 import { createServer } from "vite";
 import { fileURLToPath } from "node:url";
 import { Pubkey } from "@thru/sdk";
+import { makeWalletSetupTransaction, makeWalletBirthTransaction } from "./fixtures/activity-transactions.ts";
 
 // Real React reconciliation and Cambrian read hooks, with an offline wallet/RPC.
 // This is a DOM unit test, not browser visual QA or passkey/transaction approval.
@@ -260,4 +261,235 @@ test("a wallet switch never retains the previous account's balance in the persis
   await act(async () => { finishRead(); });
   assert.match(launcher.textContent, /17 THRU/);
   assert.deepEqual(fixture.reads, [walletA, walletB]);
+});
+
+test("switching A → fresh B → A separates history labels and counters without changing the wallet launcher", async () => {
+  const launcher = document.querySelector(".wallet-launcher");
+  fixture.client.transactions.listForAccount = async value => ({
+    transactions: value === walletA ? [makeWalletBirthTransaction(walletA)] : [makeWalletSetupTransaction(walletB)], page: {},
+  });
+  const expectCounters = (actions, transactions) => {
+    const cards = [...document.querySelectorAll(".stat-card.is-activity")];
+    assert.deepEqual(cards.map(card => [card.querySelector("p").textContent, card.querySelector("strong").textContent]), [
+      ["Cambrian actions", String(actions)], ["Wallet transactions", String(transactions)],
+    ]);
+  };
+  await click('.sidebar-nav a[href="/app/activity"]');
+  assert.match(document.querySelector(".activity-timeline").textContent, /Organism birth/);
+  await click('.sidebar-nav a[href="/app"]');
+  expectCounters(1, 1);
+  fixture.wallet.selectedAccount = { address: walletB, label: "Fresh wallet" };
+  await act(async () => { root.render(createElement(App)); });
+  expectCounters(0, 1);
+  assert.match(document.querySelector(".activity-panel").textContent, /Wallet created|Passkey registration/);
+  assert.doesNotMatch(document.querySelector(".activity-panel").textContent, /Organism birth/);
+  assert.equal(document.querySelector(".wallet-launcher"), launcher);
+  await click('.sidebar-nav a[href="/app/activity"]');
+  assert.match(document.querySelector(".activity-timeline").textContent, /Wallet created/);
+  fixture.wallet.selectedAccount = { address: walletA, label: "Primary wallet" };
+  await act(async () => { root.render(createElement(App)); });
+  assert.match(document.querySelector(".activity-timeline").textContent, /Organism birth/);
+  assert.doesNotMatch(document.querySelector(".activity-timeline").textContent, /Wallet created/);
+  await click('.sidebar-nav a[href="/app"]');
+  expectCounters(1, 1);
+});
+
+test("a late history response from wallet A cannot overwrite freshly selected wallet B", async () => {
+  let finishHistory;
+  fixture.client.transactions.listForAccount = value => value === walletA
+    ? new Promise(resolve => { finishHistory = resolve; })
+    : Promise.resolve({ transactions: [makeWalletSetupTransaction(walletB)], page: {} });
+  await click('.sidebar-nav a[href="/app/activity"]');
+  fixture.wallet.selectedAccount = { address: walletB, label: "Fresh wallet" };
+  await act(async () => { root.render(createElement(App)); });
+  assert.match(document.querySelector(".activity-timeline").textContent, /Wallet created/);
+  await act(async () => { finishHistory({ transactions: [makeWalletBirthTransaction(walletA)], page: {} }); });
+  assert.match(document.querySelector(".activity-timeline").textContent, /Wallet created/);
+  assert.doesNotMatch(document.querySelector(".activity-timeline").textContent, /Organism birth/);
+  assert.equal(fixture.connects, 0);
+});
+
+const historyPage = (address, prefix, count = 10) => Array.from({ length: count }, (_, index) => ({
+  ...makeWalletSetupTransaction(address),
+  slot: BigInt(622275 - index),
+  getSignature: () => ({ toThruFmt: () => `${prefix}-public-receipt-${index}` }),
+}));
+
+test("Activity pages use the RPC cursor and page size, and Previous/Next reuse visited pages", async () => {
+  const requests = [];
+  const launcher = document.querySelector(".wallet-launcher");
+  fixture.client.transactions.listForAccount = async (address, { page }) => {
+    requests.push({ address, token: page.pageToken, size: page.pageSize });
+    return page.pageToken ? { transactions: historyPage(address, "older", 2), page: {} }
+      : { transactions: historyPage(address, "newest"), page: { nextPageToken: "older-cursor" } };
+  };
+  await click('.sidebar-nav a[href="/app/activity"]');
+  assert.equal(document.querySelectorAll(".timeline-item").length, 10);
+  assert.match(document.querySelector(".activity-pagination").textContent, /10 transactions on this page.*Page 1/);
+  assert.equal(document.querySelector('[aria-label="Previous activity page"]').disabled, true);
+  assert.equal(document.querySelector('[aria-label="Next activity page"]').disabled, false);
+  const scrolls = [];
+  document.querySelector(".activity-page-card").scrollIntoView = options => scrolls.push(options);
+  await click('[aria-label="Next activity page"]');
+  assert.equal(document.querySelectorAll(".timeline-item").length, 2);
+  assert.match(document.querySelector(".activity-pagination").textContent, /Page 2/);
+  assert.match(document.querySelector(".activity-pagination").textContent, /End of history/);
+  assert.equal(document.querySelector('[aria-label="Next activity page"]').disabled, true);
+  await click('[aria-label="Previous activity page"]');
+  assert.equal(document.querySelectorAll(".timeline-item").length, 10);
+  await click('[aria-label="Next activity page"]');
+  assert.equal(document.querySelectorAll(".timeline-item").length, 2);
+  assert.deepEqual(scrolls, [{ block: "start", behavior: "smooth" }, { block: "start", behavior: "smooth" }, { block: "start", behavior: "smooth" }]);
+  assert.deepEqual(requests, [{ address: walletA, token: undefined, size: 10 }, { address: walletA, token: "older-cursor", size: 10 }]);
+  assert.equal(document.querySelector(".wallet-launcher"), launcher);
+  assert.equal(fixture.connects, 0);
+});
+
+test("a pending page read keeps receipts visible and locks repeat clicks; failure preserves the page and can be retried", async () => {
+  let rejectRead;
+  let olderCalls = 0;
+  fixture.client.transactions.listForAccount = async (address, { page }) => {
+    if (!page.pageToken) return { transactions: historyPage(address, "newest"), page: { nextPageToken: "older-cursor" } };
+    olderCalls++;
+    if (olderCalls === 1) return new Promise((_resolve, reject) => { rejectRead = reject; });
+    return { transactions: historyPage(address, "older", 3), page: {} };
+  };
+  await click('.sidebar-nav a[href="/app/activity"]');
+  const next = document.querySelector('[aria-label="Next activity page"]');
+  await act(async () => {
+    next.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    next.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+  });
+  assert.equal(olderCalls, 1);
+  assert.equal(document.querySelectorAll(".timeline-item").length, 10);
+  assert.equal(document.querySelector('[aria-label="Next activity page"]').disabled, true);
+  assert.equal(document.querySelector('[aria-label="Previous activity page"]').disabled, true);
+  assert.equal(document.querySelector(".activity-history-body").getAttribute("aria-busy"), "true");
+  assert.match(document.querySelector(".activity-load-status").textContent, /Loading page 2/);
+  await act(async () => { rejectRead(new Error("Offline RPC read failed")); });
+  assert.match(document.querySelector(".activity-pagination").textContent, /Page 1/);
+  assert.match(document.querySelector(".activity-page-error").textContent, /Couldn't load page 2.*current page is unchanged/);
+  assert.equal(document.querySelectorAll(".timeline-item").length, 10);
+  await click(".activity-page-error button");
+  assert.equal(olderCalls, 2);
+  assert.equal(document.querySelector(".activity-page-error"), null);
+  assert.match(document.querySelector(".activity-pagination").textContent, /Page 2/);
+  assert.equal(document.querySelectorAll(".timeline-item").length, 3);
+});
+
+test("refresh on an older page clears its cursors and reads the newest page again", async () => {
+  const tokens = [];
+  let revision = 0;
+  fixture.client.transactions.listForAccount = async (address, { page }) => {
+    tokens.push(page.pageToken);
+    return page.pageToken ? { transactions: historyPage(address, "older", 1), page: {} }
+      : { transactions: historyPage(address, `newest-${revision}`), page: { nextPageToken: "older-cursor" } };
+  };
+  await click('.sidebar-nav a[href="/app/activity"]');
+  await click('[aria-label="Next activity page"]');
+  revision++;
+  await click(".activity-refresh");
+  assert.match(document.querySelector(".activity-pagination").textContent, /Page 1/);
+  assert.match(document.querySelector(".activity-timeline").innerHTML, /newest-1-public-receipt/);
+  assert.doesNotMatch(document.querySelector(".activity-timeline").innerHTML, /older-public-receipt|newest-0-public-receipt/);
+  assert.deepEqual(tokens, [undefined, "older-cursor", undefined]);
+});
+
+test("switching wallets from an older activity page resets to page one with a fresh account cursor", async () => {
+  const requests = [];
+  const launcher = document.querySelector(".wallet-launcher");
+  fixture.client.transactions.listForAccount = async (address, { page }) => {
+    requests.push([address, page.pageToken]);
+    if (address === walletB) return { transactions: historyPage(address, "wallet-B", 1), page: {} };
+    return { transactions: historyPage(address, page.pageToken ? "A-older" : "A-newest", 10), page: page.pageToken ? {} : { nextPageToken: "A-older-cursor" } };
+  };
+  await click('.sidebar-nav a[href="/app/activity"]');
+  await click('[aria-label="Next activity page"]');
+  fixture.wallet.selectedAccount = { address: walletB, label: "Fresh wallet" };
+  await act(async () => { root.render(createElement(App)); });
+  assert.match(document.querySelector(".activity-pagination").textContent, /1 transaction on this page.*Page 1/);
+  assert.match(document.querySelector(".activity-timeline").innerHTML, /wallet-B-public-receipt/);
+  assert.doesNotMatch(document.querySelector(".activity-timeline").innerHTML, /A-older|A-newest/);
+  assert.deepEqual(requests, [[walletA, undefined], [walletA, "A-older-cursor"], [walletB, undefined]]);
+  assert.equal(document.querySelector(".wallet-launcher"), launcher);
+});
+
+test("a late older-page response cannot populate the new wallet or restore history after disconnect", async () => {
+  let finishOlder;
+  fixture.client.transactions.listForAccount = async (address, { page }) => {
+    if (address === walletB) return { transactions: historyPage(address, "wallet-B", 1), page: {} };
+    if (page.pageToken) return new Promise(resolve => { finishOlder = resolve; });
+    return { transactions: historyPage(address, "wallet-A"), page: { nextPageToken: "older-cursor" } };
+  };
+  await click('.sidebar-nav a[href="/app/activity"]');
+  await click('[aria-label="Next activity page"]');
+  fixture.wallet.selectedAccount = { address: walletB, label: "Fresh wallet" };
+  await act(async () => { root.render(createElement(App)); });
+  await act(async () => { finishOlder({ transactions: historyPage(walletA, "stale-A", 4), page: {} }); });
+  assert.match(document.querySelector(".activity-timeline").innerHTML, /wallet-B-public-receipt/);
+  assert.doesNotMatch(document.querySelector(".activity-timeline").innerHTML, /stale-A/);
+  fixture.wallet.isConnected = false;
+  fixture.wallet.selectedAccount = null;
+  await act(async () => { root.render(createElement(App)); });
+  assert.equal(document.querySelector(".activity-timeline"), null);
+  assert.equal(document.querySelector(".activity-pagination"), null);
+  assert.match(document.querySelector(".activity-page-card").textContent, /Your history starts here.*Connect Thru Wallet/);
+  assert.doesNotMatch(document.querySelector(".activity-page-card").innerHTML, /wallet-B-public-receipt|stale-A/);
+});
+
+test("a repeated network cursor is reported as an error rather than looping through the same history", async () => {
+  fixture.client.transactions.listForAccount = async (address, { page }) => ({
+    transactions: historyPage(address, page.pageToken ? "repeated" : "newest"), page: { nextPageToken: "same-cursor" },
+  });
+  await click('.sidebar-nav a[href="/app/activity"]');
+  await click('[aria-label="Next activity page"]');
+  assert.match(document.querySelector(".activity-page-error").textContent, /network repeated a history page/);
+  assert.match(document.querySelector(".activity-pagination").textContent, /Page 1/);
+  assert.doesNotMatch(document.querySelector(".activity-timeline").innerHTML, /repeated-public-receipt/);
+});
+
+test("the first-page error offers a read-only retry, and an empty page does not invent older records", async () => {
+  let calls = 0;
+  fixture.client.transactions.listForAccount = async () => {
+    calls++;
+    if (calls === 1) throw new Error("RPC temporarily unavailable");
+    return { transactions: [], page: {} };
+  };
+  await click('.sidebar-nav a[href="/app/activity"]');
+  assert.match(document.querySelector(".activity-page-card").textContent, /Couldn't load activity.*RPC temporarily unavailable/);
+  assert.equal(document.querySelector(".activity-pagination"), null);
+  await click(".read-state-retry");
+  assert.match(document.querySelector(".activity-page-card").textContent, /No transactions yet/);
+  assert.match(document.querySelector(".activity-pagination").textContent, /0 transactions on this page.*End of history.*Page 1/);
+  assert.equal(document.querySelector('[aria-label="Next activity page"]').disabled, true);
+  assert.equal(document.querySelector('[aria-label="Previous activity page"]').disabled, true);
+  assert.equal(calls, 2);
+  assert.equal(fixture.connects, 0);
+});
+
+test("page navigation honors reduced motion and never remounts the official wallet", async () => {
+  dom.window.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {} });
+  fixture.client.transactions.listForAccount = async (address, { page }) => ({ transactions: historyPage(address, "receipt", 1), page: page.pageToken ? {} : { nextPageToken: "older-cursor" } });
+  const launcher = document.querySelector(".wallet-launcher");
+  await click('.sidebar-nav a[href="/app/activity"]');
+  const scrolls = [];
+  document.querySelector(".activity-page-card").scrollIntoView = options => scrolls.push(options);
+  await click('[aria-label="Next activity page"]');
+  assert.deepEqual(scrolls, [{ block: "start", behavior: "auto" }]);
+  assert.equal(document.querySelector(".wallet-launcher"), launcher);
+});
+
+test("leaving Activity invalidates a pending older-page response without restoring a hidden history panel", async () => {
+  let finishOlder;
+  fixture.client.transactions.listForAccount = async (address, { page }) => page.pageToken
+    ? new Promise(resolve => { finishOlder = resolve; })
+    : { transactions: historyPage(address, "newest"), page: { nextPageToken: "older-cursor" } };
+  await click('.sidebar-nav a[href="/app/activity"]');
+  await click('[aria-label="Next activity page"]');
+  const launcher = document.querySelector(".wallet-launcher");
+  await click('.sidebar-nav a[href="/app/organisms"]');
+  await act(async () => { finishOlder({ transactions: historyPage(walletA, "stale-older", 2), page: {} }); });
+  assert.equal(document.querySelector(".activity-page-card"), null);
+  assert.equal(document.querySelector(".wallet-launcher"), launcher);
+  assert.equal(window.location.pathname, "/app/organisms");
 });
