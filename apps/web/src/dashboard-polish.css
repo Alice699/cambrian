@@ -3,6 +3,57 @@
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .dashboard-main { min-width: 0; }
 .route-view.is-dashboard { animation: none; }
+/* Persistent app chrome; only route-owned content is replaced. */
+.dashboard-app-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 24px;
+  view-transition-name: dashboard-header;
+}
+.dashboard-app-heading { min-width: 0; }
+.dashboard-app-heading h1 {
+  margin: 12px 0 0;
+  font: 600 clamp(30px, 2.6vw, 42px)/1.15 "Space Grotesk", sans-serif;
+  letter-spacing: -1.1px;
+}
+.dashboard-app-description {
+  max-width: 610px;
+  margin: 12px 0 0;
+  color: #69736d;
+  font: 400 16px/25px "IBM Plex Sans", sans-serif;
+}
+.dashboard-app-controls {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 12px;
+  min-width: 0;
+}
+.dashboard-app-controls > .official-wallet-control { flex: 0 1 248px; }
+.dashboard-page-actions { display: flex; align-items: center; justify-content: flex-end; min-height: 54px; }
+.dashboard-page-actions:empty { display: none; }
+.dashboard-page-actions > .faucet-button { min-height: 54px; }
+.dashboard-route-content { margin-top: 32px; animation: dashboard-content-enter .2s ease-out both; }
+.dashboard-route-content > .ecosystem-stage { margin-top: 0; }
+.route-view.is-dashboard .sidebar { view-transition-name: dashboard-sidebar; }
+@keyframes dashboard-content-enter { from { opacity: .35; } to { opacity: 1; } }
+::view-transition-group(dashboard-header), ::view-transition-group(dashboard-sidebar) { animation-duration: 0s; }
+::view-transition-old(dashboard-header), ::view-transition-old(dashboard-sidebar) { display: none; animation: none; }
+::view-transition-new(dashboard-header), ::view-transition-new(dashboard-sidebar) { animation: none; }
+@media (max-width: 1080px) {
+  .dashboard-app-header { grid-template-columns: minmax(0, 1fr); gap: 22px; }
+  .dashboard-app-controls { grid-row: 1; }
+  .dashboard-app-heading { grid-row: 2; }
+}
+@media (max-width: 540px) {
+  .dashboard-app-controls { flex-wrap: wrap; }
+  .dashboard-app-controls > .official-wallet-control { order: -1; margin-left: auto; }
+  .dashboard-page-actions { flex-basis: 100%; }
+  .dashboard-app-heading h1 { font-size: 30px; }
+  .dashboard-route-content { margin-top: 26px; }
+}
+@media (prefers-reduced-motion: reduce) { .dashboard-route-content { animation: none; } }
 .header-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 12px; }
 .header-actions > .faucet-button { min-height: 54px; }
 .inner-page-action { align-items: center; }

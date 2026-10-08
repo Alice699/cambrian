@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useThru, useWallet } from "@thru/wallet/react";
 import {
   listAccountTransactions,
@@ -15,7 +15,8 @@ import {
 import { walletMetadata } from "@cambrian/wallet-core";
 import { claimFaucet, FaucetApiError } from "./faucet";
 import { activeThruAddress, noticeTone } from "./transaction-model";
-import { OfficialWalletControl, ConnectedAccountSummary, ConnectWalletAction } from "./components/WalletControl";
+import { ConnectWalletAction } from "./components/WalletControl";
+import { DashboardHeader, DashboardPageActions, DashboardPageActionsContext } from "./components/DashboardHeader";
 import { FaucetButton } from "./components/FaucetButton";
 import { AddressDisplay } from "./components/AddressDisplay";
 import { ReadStateCard } from "./components/ReadStateCard";
@@ -32,10 +33,10 @@ import thruLogoAsset from "./assets/thru-logo.png";
 import heroOrganismAsset from "./assets/organisms-thumbnail.svg";
 import organismsThumbnailAsset from "./assets/network-dot.svg";
 import { appConfig } from "./config";
+import { cancelRouteTransition, navigateInternal, routeFromPath, type Route } from "./navigation";
 
 
 type Notice = "faucet" | "faucet-submitted" | "faucet-success" | "faucet-error" | "birth" | "birth-submitted" | "birth-success" | "birth-error" | null;
-type Route = "landing" | "dashboard" | "organisms" | "activity" | "learn";
 
 const FAUCET_BALANCE_POLL_INTERVAL_MS = 1_000;
 const FAUCET_BALANCE_POLL_TIMEOUT_MS = 30_000;
@@ -107,30 +108,7 @@ async function waitForBalanceIncrease(
 }
 
 function routeFromLocation(): Route {
-  const path = window.location.pathname;
-  if (path === "/app/organisms") return "organisms";
-  if (path === "/app/activity") return "activity";
-  if (path === "/app/learn") return "learn";
-  return path.startsWith("/app") ? "dashboard" : "landing";
-}
-
-function navigateInternal(path: string, event: MouseEvent<HTMLAnchorElement>) {
-  if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-  event.preventDefault();
-
-  const updateRoute = () => {
-    window.history.pushState({}, "", path);
-    window.dispatchEvent(new PopStateEvent("popstate"));
-  };
-  const documentWithTransitions = document as Document & {
-    startViewTransition?: (update: () => void) => unknown;
-  };
-
-  if (documentWithTransitions.startViewTransition) {
-    documentWithTransitions.startViewTransition(updateRoute);
-  } else {
-    updateRoute();
-  }
+  return routeFromPath(window.location.pathname);
 }
 
 function LogoPrimary() {
@@ -378,26 +356,29 @@ function noticeCopy(notice: Notice, detail?: string | null) {
   return detail ?? "Working on your request...";
 }
 
-function DashboardFrame({ activeRoute, children, notice, noticeDetail, onDismiss }: { activeRoute: Exclude<Route, "landing">; children: ReactNode; notice?: Notice; noticeDetail?: string | null; onDismiss?: () => void }) {
+function DashboardFrame({ activeRoute, children, balanceRefreshKey }: { activeRoute: Exclude<Route, "landing">; children: ReactNode; balanceRefreshKey: number }) {
+  const [actionsTarget, setActionsTarget] = useState<HTMLDivElement | null>(null);
   return (
-    <div className="dashboard-shell">
-      <Sidebar activeRoute={activeRoute} />
-      <main className="dashboard-main">
-        {children}
-        <DashboardFooter />
-      </main>
-      {notice && <TransactionNotice tone={noticeTone(notice)} message={noticeCopy(notice, noticeDetail)} onDismiss={onDismiss} />}
-    </div>
+    <DashboardPageActionsContext.Provider value={actionsTarget}>
+      <div className="dashboard-shell">
+        <Sidebar activeRoute={activeRoute} />
+        <main className="dashboard-main">
+          <DashboardHeader route={activeRoute} balanceRefreshKey={balanceRefreshKey} actionsRef={setActionsTarget} />
+          <div className="dashboard-route-content" key={activeRoute}>{children}</div>
+          <DashboardFooter />
+        </main>
+      </div>
+    </DashboardPageActionsContext.Provider>
   );
 }
 
-function DashboardPage() {
+function DashboardPage({ onBalanceRefresh }: { onBalanceRefresh: () => void }) {
   const { isConnected, selectedAccount } = useWallet();
   // A wallet switch creates a fresh account-scoped view and cancels old workflows.
-  return <DashboardContent key={activeThruAddress(isConnected, selectedAccount?.address) ?? "disconnected"} />;
+  return <DashboardContent key={activeThruAddress(isConnected, selectedAccount?.address) ?? "disconnected"} onBalanceRefresh={onBalanceRefresh} />;
 }
 
-function DashboardContent() {
+function DashboardContent({ onBalanceRefresh }: { onBalanceRefresh: () => void }) {
   const { thru } = useThru();
   const { wallet, selectedAccount, isConnected, connect } = useWallet();
   const activeAddress = activeThruAddress(isConnected, selectedAccount?.address);
@@ -418,7 +399,6 @@ function DashboardContent() {
   const faucetBaselineRef = useRef<bigint | null>(null);
   const [faucetPending, setFaucetPending] = useState(false);
   const [faucetStage, setFaucetStage] = useState<FaucetStage>("idle");
-  const [balanceRefreshKey, setBalanceRefreshKey] = useState(0);
   const organismRead = useOrganismCollection(chainRefreshKey, createdOrganism);
   const activityRead = useAccountTransactions(chainRefreshKey, isConnected ? selectedAccount?.address : undefined);
   const organism = organismRead.organisms[0];
@@ -495,7 +475,7 @@ function DashboardContent() {
       }
       if (controller.signal.aborted) return;
       setBirthReceipt(result);
-      setBalanceRefreshKey((current) => current + 1);
+      onBalanceRefresh();
       setChainRefreshKey((current) => current + 1);
       if (result.organism) {
         try { clearPendingBirth(sessionStorage, appConfig.programId, activeAddress); } catch { /* Non-secret receipt only. */ }
@@ -571,7 +551,7 @@ function DashboardContent() {
 
       if (controller.signal.aborted) return;
 
-      setBalanceRefreshKey((current) => current + 1);
+      onBalanceRefresh();
       if (confirmedBalance !== null) {
         setNotice("faucet-success");
         setNoticeDetail(`${receipt.amount} THRU received. Balance is now ${confirmedBalance.toString()} THRU.`);
@@ -597,7 +577,7 @@ function DashboardContent() {
 
       const balanceChanged = reconciledBalance !== null && baselineBalance !== null && reconciledBalance > baselineBalance;
       if (balanceChanged && reconciledBalance !== null) {
-        setBalanceRefreshKey((current) => current + 1);
+        onBalanceRefresh();
         setNotice("faucet-success");
         setNoticeDetail(`Balance updated to ${reconciledBalance.toString()} THRU. The faucet transfer is complete.`);
         return;
@@ -613,7 +593,7 @@ function DashboardContent() {
         reconciledBalance = await waitForBalanceIncrease(thru, activeAddress, baselineBalance, controller.signal);
         if (controller.signal.aborted) return;
         if (reconciledBalance !== null) {
-          setBalanceRefreshKey((current) => current + 1);
+          onBalanceRefresh();
           setNotice("faucet-success");
           setNoticeDetail(`Balance updated to ${reconciledBalance.toString()} THRU. The faucet transfer is complete.`);
           return;
@@ -646,7 +626,7 @@ function DashboardContent() {
     try {
       const account = await readAccountSnapshot(thru, activeAddress);
       if (faucetControllerRef.current?.signal.aborted) return;
-      setBalanceRefreshKey(key => key + 1);
+      onBalanceRefresh();
       if (account.balance !== null && faucetBaselineRef.current !== null && account.balance > faucetBaselineRef.current) {
         setFaucetPending(false); setNotice("faucet-success");
         setNoticeDetail(`Balance updated to ${account.balance.toString()} THRU.`);
@@ -666,18 +646,10 @@ function DashboardContent() {
   };
 
   return (
-    <DashboardFrame activeRoute="dashboard" notice={notice} noticeDetail={noticeDetail} onDismiss={dismissNotice}>
-      <header className="dashboard-header" id="overview">
-        <div>
-          <p className="page-label">OVERVIEW&nbsp; / &nbsp;CAMBRIAN LIFEFORM</p>
-          <h1>Your ecosystem</h1>
-        </div>
-        <div className="header-actions" id="account-controls">
-          <FaucetButton stage={faucetStage} pending={faucetPending} connected={Boolean(activeAddress)} onClick={faucetPending ? checkFaucetBalance : handleFaucet} />
-          <OfficialWalletControl refreshKey={balanceRefreshKey} />
-        </div>
-      </header>
-      <ConnectedAccountSummary />
+    <>
+      <DashboardPageActions>
+        <FaucetButton stage={faucetStage} pending={faucetPending} connected={Boolean(activeAddress)} onClick={faucetPending ? checkFaucetBalance : handleFaucet} />
+      </DashboardPageActions>
 
       <EcosystemStage onBirth={handleBirth} birthStage={birthStage} birthBusy={birthBusy} birthPending={birthPending} organism={organism} readStatus={organismRead.status} />
       {!appConfig.walletBirthEnabled && <div className="ownership-upgrade-note" role="status"><StatusIcon tone="pending" /><div><strong>Wallet ownership upgrade pending</strong><p>New Births are paused until the updated program is deployed. Existing organisms remain on-chain; legacy fee-payer-controlled organisms require a reviewed ownership transfer.</p></div><a href={explorerLink("address", appConfig.programId)} target="_blank" rel="noreferrer">View program ↗</a></div>}
@@ -702,19 +674,11 @@ function DashboardContent() {
         <OrganismsPanel organism={organism} status={organismRead.status} error={organismRead.error} onRetry={() => setChainRefreshKey(key => key + 1)} />
         <ActivityPanel transactions={activityRead.transactions} status={activityRead.status} error={activityRead.error} onRetry={() => setChainRefreshKey(key => key + 1)} />
       </div>
-    </DashboardFrame>
+      {notice && <TransactionNotice tone={noticeTone(notice)} message={noticeCopy(notice, noticeDetail)} onDismiss={dismissNotice} />}
+    </>
   );
 }
 
-
-function InnerPageHeader({ label, title, description, action }: { label: string; title: string; description: string; action?: ReactNode }) {
-  return (
-    <><header className="inner-page-header">
-      <div><p className="page-label">{label}</p><h1>{title}</h1><p>{description}</p></div>
-      <div className="inner-page-action">{action}<OfficialWalletControl /></div>
-    </header><ConnectedAccountSummary /></>
-  );
-}
 
 function OrganismsPage() {
   const [refreshKey, setRefreshKey] = useState(0);
@@ -723,13 +687,8 @@ function OrganismsPage() {
   const statusCopy = organismStatusCopy(organismRead.status, organismRead.error);
 
   return (
-    <DashboardFrame activeRoute="organisms">
-      <InnerPageHeader
-        label="ORGANISMS / COLLECTION"
-        title="The living collection"
-        description="Track the organisms you have brought to life and the state they carry across the Thru Betanet."
-        action={<span className="connected-badge"><i /> READ-ONLY</span>}
-      />
+    <>
+      <DashboardPageActions><span className="connected-badge"><i /> READ-ONLY</span></DashboardPageActions>
       {organism ? (
         <>
           <section className="organism-focus-card" aria-labelledby="focus-organism-title">
@@ -755,7 +714,7 @@ function OrganismsPage() {
       ) : (
         <ReadStateCard title={statusCopy[0]} description={statusCopy[1]} tone={organismRead.status === "error" ? "error" : "neutral"} loading={organismRead.status === "loading" || organismRead.status === "idle"} onRetry={() => setRefreshKey(key => key + 1)} icon={organismRead.status === "needs-wallet" ? "wallet" : "organism"} action={["needs-wallet", "empty"].includes(organismRead.status) ? <ReadStateAction status={organismRead.status} kind="organisms" /> : undefined} />
       )}
-    </DashboardFrame>
+    </>
   );
 }
 
@@ -783,28 +742,27 @@ function ActivityPage() {
   const statusCopy = activityStatusCopy(activityRead.status, activityRead.error);
 
   return (
-    <DashboardFrame activeRoute="activity">
-      <InnerPageHeader label="ACTIVITY / ON-CHAIN TRAIL" title="A clear chain of events" description="Every account transaction is read from Thru Betanet and kept visible without inventing confirmation states." action={<span className="connected-badge"><i /> {activityRead.transactions.length > 0 ? activityRead.transactions.length + " READ" : "RPC READ"}</span>} />
+    <>
+      <DashboardPageActions><span className="connected-badge"><i /> {activityRead.transactions.length > 0 ? activityRead.transactions.length + " READ" : "RPC READ"}</span></DashboardPageActions>
       <section className="activity-page-card">
         <div className="activity-card-heading"><div><p className="panel-label">RECENT ACTIVITY</p><h2>What happened next</h2></div><span>BETANET / LIVE READ</span></div>
         {activityRead.transactions.length > 0 ? <ActivityTimeline transactions={activityRead.transactions} /> : <ReadStateCard title={statusCopy[0]} description={statusCopy[1]} tone={activityRead.status === "error" ? "error" : "neutral"} loading={activityRead.status === "loading" || activityRead.status === "idle"} onRetry={() => setRefreshKey(key => key + 1)} icon={activityRead.status === "needs-wallet" ? "wallet" : "activity"} action={["needs-wallet", "empty"].includes(activityRead.status) ? <ReadStateAction status={activityRead.status} kind="activity" onRetry={() => setRefreshKey(key => key + 1)} /> : undefined} />}
       </section>
       <section className="trail-callout"><span>ON-CHAIN TRANSPARENCY</span><p>Nothing disappears behind a spinner. When a transaction is submitted, its state and explorer trail remain visible.</p><a href="https://scan.thru.org/" target="_blank" rel="noreferrer">Open Thru explorer</a></section>
-    </DashboardFrame>
+    </>
   );
 }
 
 function LearnPage() {
   return (
-    <DashboardFrame activeRoute="learn">
-      <InnerPageHeader label="LEARN / CAMBRIAN BASICS" title="Start with the living parts" description="A short field guide to wallets, the Betanet faucet, and the actions that shape an organism." />
+    <>
       <section className="learn-feature"><div><p className="panel-label">FIELD NOTE 01</p><h2>On-chain state, without the command line.</h2><p>Cambrian keeps the mechanics visible while taking care of the ceremony. You choose an action, review the intent, approve it, and watch the result settle on Thru.</p><a className="text-link" href="https://thru.org/docs/" target="_blank" rel="noreferrer">Read Thru documentation</a></div><div className="learn-index"><span>01</span><span>WALLET</span><span>02</span><span>FAUCET</span><span>03</span><span>ORGANISM</span></div></section>
       <section className="learn-grid">
         <article><span>01 / WALLET</span><h2>Your signing boundary</h2><p>Your wallet is the boundary that approves actions. Cambrian makes the account and intent visible before anything is signed.</p></article>
         <article><span>02 / FAUCET</span><h2>Testnet THRU</h2><p>Request native THRU for Betanet actions. The faucet is a network service, not a hidden balance inside the interface.</p></article>
         <article><span>03 / ORGANISM</span><h2>Birth, pulse, evolve</h2><p>An organism is a stateful on-chain object. Each action leaves a trace you can inspect later.</p></article>
       </section>
-    </DashboardFrame>
+    </>
   );
 }
 
@@ -1116,20 +1074,27 @@ function LandingPage() {
 
 export default function App() {
   const [route, setRoute] = useState<Route>(routeFromLocation);
+  const [balanceRefreshKey, setBalanceRefreshKey] = useState(0);
+  const refreshWalletBalance = useCallback(() => setBalanceRefreshKey(key => key + 1), []);
 
   useEffect(() => {
-    const handlePopState = () => setRoute(routeFromLocation());
+    const handlePopState = () => {
+      const nextRoute = routeFromLocation();
+      if (nextRoute === "landing") cancelRouteTransition();
+      setRoute(nextRoute);
+    };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
   return (
-    <div className={`route-view ${route === "landing" ? "" : "is-dashboard"}`} key={route}>
-      {route === "dashboard" && <DashboardPage />}
-      {route === "organisms" && <OrganismsPage />}
-      {route === "activity" && <ActivityPage />}
-      {route === "learn" && <LearnPage />}
-      {route === "landing" && <LandingPage />}
+    <div className={`route-view ${route === "landing" ? "" : "is-dashboard"}`}>
+      {route === "landing" ? <LandingPage /> : <DashboardFrame activeRoute={route} balanceRefreshKey={balanceRefreshKey}>
+        {route === "dashboard" && <DashboardPage onBalanceRefresh={refreshWalletBalance} />}
+        {route === "organisms" && <OrganismsPage />}
+        {route === "activity" && <ActivityPage />}
+        {route === "learn" && <LearnPage />}
+      </DashboardFrame>}
     </div>
   );
 }

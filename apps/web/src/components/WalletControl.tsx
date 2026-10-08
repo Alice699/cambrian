@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import { useWallet } from "@thru/wallet/react";
 import { walletMetadata } from "@cambrian/wallet-core";
 import { activeThruAddress } from "../transaction-model";
@@ -46,7 +46,7 @@ export function WalletLauncherButton({ presentation, expanded = false, onClick }
 }
 
 /** Thru's official SDK still draws and manages the account menu and all approval UI. */
-export function OfficialWalletControl({ refreshKey = 0 }: { refreshKey?: number }) {
+export function OfficialWalletControl({ refreshKey = 0, scopeKey = "" }: { refreshKey?: number; scopeKey?: string }) {
   const { selectedAccount, isConnected, openAccountMenu, ensureDepositAccount, deposit } = useWallet();
   const address = activeThruAddress(isConnected, selectedAccount?.address);
   const balance = useAccountBalance(address, refreshKey);
@@ -55,11 +55,12 @@ export function OfficialWalletControl({ refreshKey = 0 }: { refreshKey?: number 
   const [menuOpen, setMenuOpen] = useState(false);
   const menuBusy = useRef(false);
   const menuScope = useRef({ address, active: true });
-  useEffect(() => {
+  useLayoutEffect(() => {
     const scope = { address, active: true };
-    menuScope.current = scope; setMenuOpen(false);
+    menuScope.current = scope;
+    if (!menuBusy.current) setMenuOpen(false);
     return () => { scope.active = false; };
-  }, [address]);
+  }, [address, scopeKey]);
   const onClick = async (event: MouseEvent<HTMLButtonElement>) => {
     if (connection.isConnecting || menuBusy.current) return;
     if (!address) { await connection.onConnect(); return; }
@@ -68,13 +69,17 @@ export function OfficialWalletControl({ refreshKey = 0 }: { refreshKey?: number 
     const rect = event.currentTarget.getBoundingClientRect();
     menuBusy.current = true; setMenuOpen(true);
     try {
-      await openOfficialWalletMenu({ openAccountMenu, ensureDepositAccount, deposit }, {
+      const result = await openOfficialWalletMenu({ openAccountMenu, ensureDepositAccount, deposit }, {
         address, balance: formattedBalance, explorerUrl: explorerLink("address", address),
         anchor: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
         isCurrent: () => scope.active && menuScope.current === scope,
       });
+      // The shared launcher no longer remounts on navigation; refresh explicitly
+      // after an Add funds action completes for this same account and route.
+      if (result?.action === "deposit" && scope.active && menuScope.current === scope
+        && (!result.selectedAccount || result.selectedAccount.address === address)) balance.retry();
     } catch (cause) { if (scope.active && menuScope.current === scope) connection.reportError(cause); }
-    finally { menuBusy.current = false; if (scope.active && menuScope.current === scope) setMenuOpen(false); }
+    finally { menuBusy.current = false; if (menuScope.current.active) setMenuOpen(false); }
   };
   const presentation = walletLauncherPresentation({ address, label: selectedAccount?.label, connecting: connection.isConnecting, checking: connection.checking, balance: balance.balance, balanceStatus: balance.status });
   return <div className="official-wallet-control" aria-label="Thru Wallet account controls">

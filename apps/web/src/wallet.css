@@ -33,8 +33,8 @@
   text-align: left;
   box-shadow: 0 2px 5px #243c2710;
   transition: background .16s, border-color .16s, box-shadow .16s;
-  view-transition-name: wallet-launcher;
 }
+.route-view.is-dashboard .wallet-launcher { view-transition-name: wallet-launcher; }
 .wallet-launcher:hover:not(:disabled) {
   background: #f1f6eb;
   border-color: #9fb799;
@@ -88,9 +88,10 @@
 .connect-wallet-action .connect-thru-action:disabled { opacity: 1; cursor: wait; background: #faf6e9; border-color: #ddcda3; }
 .connect-thru-action .status-icon { width: 16px; height: 16px; flex-basis: 16px; background: transparent; }
 .connect-thru-action .status-icon svg { width: 15px; height: 15px; }
-/* Keep the launcher visible while the rest of a page transitions. */
+/* Show only the destination launcher, never the old account's floating snapshot. */
 ::view-transition-group(wallet-launcher) { animation-duration: 0s; }
-::view-transition-old(wallet-launcher), ::view-transition-new(wallet-launcher) { animation: none; }
+::view-transition-old(wallet-launcher) { display: none; animation: none; }
+::view-transition-new(wallet-launcher) { animation: none; }
 @media (max-width: 540px) { .official-wallet-control { justify-items: start; } }
 @media (max-width: 360px) { .connect-wallet-action .connect-thru-action { min-width: 0; } }
 @media (prefers-reduced-motion: reduce) { .wallet-launcher { transition: none; } }

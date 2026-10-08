@@ -5,9 +5,10 @@ import { ThruProvider } from "@thru/wallet/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createServer } from "vite";
 import { fileURLToPath } from "node:url";
+import { readFile } from "node:fs/promises";
 
 // Render real React components, without a browser, passkey, or network writes.
-let server, components, app, faucet, address, wallet, network, presentation;
+let server, components, app, faucet, address, wallet, network, presentation, navigation;
 before(async () => {
   server = await createServer({ root: fileURLToPath(new URL("../apps/web", import.meta.url)), server: { middlewareMode: true, hmr: false, watch: null }, appType: "custom", logLevel: "silent" });
   components = await server.ssrLoadModule("/src/components/TransactionFeedback.tsx");
@@ -17,6 +18,7 @@ before(async () => {
   wallet = await server.ssrLoadModule("/src/components/WalletControl.tsx");
   network = await server.ssrLoadModule("/src/components/NetworkCard.tsx");
   presentation = await server.ssrLoadModule("/src/presentation-model.ts");
+  navigation = await server.ssrLoadModule("/src/navigation.ts");
 });
 after(async () => { await server?.close(); });
 
@@ -180,4 +182,168 @@ test("an approval-pending launcher is disabled and communicates waiting without 
   assert.match(html, /Waiting for Thru Wallet/);
   assert.match(html, /status-icon is-pending/);
   assert.match(html, /thru-logo\.png/);
+});
+
+const renderRoute = pathname => {
+  const previousWindow = globalThis.window;
+  globalThis.window = { location: { pathname }, matchMedia: () => ({ matches: false }) };
+  try {
+    return renderToStaticMarkup(createElement(ThruProvider, { config: { rpcUrl: "https://rpc.betanet.thru.org", iframeUrl: "https://app.tid.sh/embedded" } }, createElement(app.default)));
+  } finally {
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  }
+};
+
+test("the landing route has no interactive wallet controls, even inside the persistent wallet provider", () => {
+  const html = renderRoute("/");
+  assert.match(html, /class="landing-page"/);
+  assert.match(html, /Open app/);
+  assert.doesNotMatch(html, /official-wallet-control|wallet-launcher|connect-wallet-action|account-context/);
+});
+
+test("each application route still renders the official wallet launcher", () => {
+  for (const pathname of ["/app", "/app/organisms", "/app/activity", "/app/learn"]) {
+    const html = renderRoute(pathname);
+    assert.match(html, /route-view is-dashboard/);
+    assert.equal((html.match(/class="wallet-launcher /g) ?? []).length, 1);
+    assert.doesNotMatch(html, /class="landing-page"/);
+  }
+});
+
+test("wallet transition styles discard the old snapshot instead of keeping a floating wallet on landing", async () => {
+  const css = await readFile(new URL("../apps/web/src/wallet.css", import.meta.url), "utf8");
+  assert.match(css, /\.route-view\.is-dashboard \.wallet-launcher\s*\{\s*view-transition-name:\s*wallet-launcher;/);
+  assert.match(css, /::view-transition-old\(wallet-launcher\)\s*\{[^}]*display:\s*none;/);
+  assert.match(css, /::view-transition-new\(wallet-launcher\)\s*\{[^}]*animation:\s*none;/);
+});
+
+const withNavigation = (pathname, callback, supportsTransitions = true) => {
+  const previous = Object.fromEntries(["window", "document", "PopStateEvent"].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+  const calls = [];
+  const event = { defaultPrevented: false, button: 0, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, preventDefault: () => calls.push("prevent") };
+  globalThis.window = {
+    location: { pathname },
+    history: { pushState: (_state, _title, path) => { calls.push(`history:${path}`); globalThis.window.location.pathname = path; } },
+    dispatchEvent: event => calls.push(`event:${event.type}`),
+  };
+  globalThis.document = supportsTransitions ? {
+    activeViewTransition: { skipTransition: () => calls.push("skip") },
+    startViewTransition: update => {
+      calls.push("transition"); update(); calls.push("snapshot");
+      return { skipTransition: () => calls.push("skip-route"), ready: Promise.resolve(), finished: Promise.resolve() };
+    },
+  } : {};
+  globalThis.PopStateEvent = class { constructor(type) { this.type = type; } };
+  try { callback({ calls, event }); }
+  finally {
+    navigation.cancelRouteTransition();
+    for (const [key, descriptor] of Object.entries(previous)) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else delete globalThis[key];
+    }
+  }
+};
+
+test("navigating from any application page to landing cancels old snapshots without starting a new one", () => {
+  for (const path of ["/app", "/app/organisms", "/app/activity", "/app/learn"]) {
+    withNavigation(path, ({ calls, event }) => {
+      navigation.navigateInternal("/", event);
+      assert.deepEqual(calls, ["prevent", "skip", "history:/", "event:popstate"]);
+      assert.equal(globalThis.window.location.pathname, "/");
+    });
+  }
+});
+
+test("opening the application from landing does not capture an unrelated wallet snapshot", () => {
+  withNavigation("/", ({ calls, event }) => {
+    navigation.navigateInternal("/app", event);
+    assert.deepEqual(calls, ["prevent", "skip", "history:/app", "event:popstate"]);
+  });
+});
+
+test("transitions between application pages update the route before the destination snapshot", () => {
+  withNavigation("/app", ({ calls, event }) => {
+    navigation.navigateInternal("/app/activity", event);
+    assert.deepEqual(calls, ["prevent", "skip", "transition", "history:/app/activity", "event:popstate", "snapshot"]);
+  });
+});
+
+test("returning to landing interrupts a tracked transition even in browsers without activeViewTransition", () => {
+  withNavigation("/app", ({ calls, event }) => {
+    delete globalThis.document.activeViewTransition;
+    navigation.navigateInternal("/app/activity", event);
+    calls.length = 0;
+    navigation.navigateInternal("/", event);
+    assert.deepEqual(calls, ["prevent", "skip-route", "history:/", "event:popstate"]);
+  });
+});
+
+test("browser Back can cancel an in-flight application snapshot without changing wallet or history state", () => {
+  withNavigation("/app", ({ calls, event }) => {
+    delete globalThis.document.activeViewTransition;
+    navigation.navigateInternal("/app/organisms", event);
+    globalThis.window.location.pathname = "/";
+    calls.length = 0;
+    navigation.cancelRouteTransition();
+    assert.deepEqual(calls, ["skip-route"]);
+    assert.equal(globalThis.window.location.pathname, "/");
+  });
+});
+
+test("a cancelled transition callback cannot reopen the application after returning to landing", () => {
+  withNavigation("/app", ({ calls, event }) => {
+    let pendingUpdate;
+    globalThis.document.startViewTransition = update => {
+      pendingUpdate = update;
+      return { skipTransition: () => calls.push("skip-route"), ready: Promise.resolve(), finished: Promise.resolve() };
+    };
+    navigation.navigateInternal("/app/activity", event);
+    navigation.navigateInternal("/", event);
+    calls.length = 0;
+    pendingUpdate();
+    assert.deepEqual(calls, []);
+    assert.equal(globalThis.window.location.pathname, "/");
+  });
+});
+
+test("rapid application navigation ignores the cancelled destination instead of overwriting the latest route", () => {
+  withNavigation("/app", ({ calls, event }) => {
+    const updates = [];
+    globalThis.document.startViewTransition = update => {
+      updates.push(update);
+      return { skipTransition: () => {}, ready: Promise.resolve(), finished: Promise.resolve() };
+    };
+    navigation.navigateInternal("/app/organisms", event);
+    navigation.navigateInternal("/app/activity", event);
+    calls.length = 0;
+    updates[0]();
+    assert.deepEqual(calls, []);
+    updates[1]();
+    assert.deepEqual(calls, ["history:/app/activity", "event:popstate"]);
+    assert.equal(globalThis.window.location.pathname, "/app/activity");
+  });
+});
+
+test("internal navigation still works without browser view-transition support", () => {
+  withNavigation("/app", ({ calls, event }) => {
+    navigation.navigateInternal("/app/organisms", event);
+    assert.deepEqual(calls, ["prevent", "history:/app/organisms", "event:popstate"]);
+  }, false);
+});
+
+test("modified clicks retain native link behavior and never start a wallet transition", () => {
+  for (const modification of [{ metaKey: true }, { ctrlKey: true }, { shiftKey: true }, { altKey: true }, { button: 1 }, { defaultPrevented: true }]) {
+    withNavigation("/app", ({ calls, event }) => {
+      navigation.navigateInternal("/", { ...event, ...modification });
+      assert.deepEqual(calls, []);
+    });
+  }
+});
+
+test("only the /app path boundary belongs to the wallet-enabled application", () => {
+  assert.equal(navigation.routeFromPath("/app"), "dashboard");
+  assert.equal(navigation.routeFromPath("/app/"), "dashboard");
+  assert.equal(navigation.routeFromPath("/app/organisms"), "organisms");
+  for (const path of ["/", "/apple", "/application", "/about"]) assert.equal(navigation.routeFromPath(path), "landing");
 });

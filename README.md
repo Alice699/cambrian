@@ -8,6 +8,7 @@ and account activity, and makes the organism transaction lifecycle visible.
 ## Features
 
 - Instant wallet launcher with the original Thru logo and official Thru-hosted account menu
+- Persistent dashboard header and wallet balance across app pages; no wallet controls on landing
 - Live native THRU balance in the official wallet control
 - Organism discovery filtered by the selected wallet's on-chain controller
 - Loading skeletons, clear empty states, and read-only retry actions
@@ -84,7 +85,7 @@ the new instruction.
 | --- | --- |
 | npm run dev | Start the web app |
 | npm run api:dev | Start the faucet API |
-| npm run test | Run SDK, ownership, transaction UI, and faucet tests |
+| npm run test | Run SDK, ownership, transaction UI, wallet navigation DOM, and faucet tests |
 | npm run typecheck | Check the web app |
 | npm run api:typecheck | Check the API |
 | npm run build | Build the production web app |
