@@ -1,9 +1,18 @@
 # Cambrian program: wallet ownership upgrade
 
 This directory contains the C program, ABI, and build configuration for the
-proposed wallet-owned Birth upgrade. It has not been deployed by this change.
+wallet-owned Birth upgrade deployed to the existing Betanet program on 2026-10-08.
+Program version 1 and ABI revision 1 were read back and matched the reviewed
+binary and publish-ready ABI byte-for-byte. A manually approved Thru Wallet Birth
+at slot 622115 completed all four UI steps. Read-only RPC verification confirmed
+VM and program errors are both zero and the organism controller is the selected
+managed wallet, not its fee payer. Live UI account-switching verification remains
+pending, distinct from the successful RPC ownership-isolation checks.
 The baseline is the previously verified Cambrian source in
 [Thru-betanet-program](https://github.com/Alice699/Thru-betanet-program).
+
+The [release record](wallet-birth-release.json) contains public addresses, hashes,
+and upgrade signatures only. No legacy organism controller was transferred.
 
 ## Compatibility
 
@@ -44,6 +53,30 @@ Run the SDK and UI regression tests from the repository root:
     npm run typecheck
     npm run api:typecheck
     npm run build
+
+## Reproduce the release verification
+
+Build into a separate directory in Linux/WSL:
+
+    make -j1 BASEDIR="$PWD/build/release-verification"
+
+Then run from the repository root:
+
+    thru abi codegen --files programs/cambrian/cambrian.abi.yaml --language typescript --output programs/cambrian/build/release-verification/generated
+    thru abi prep-for-publish --file programs/cambrian/cambrian.abi.yaml --target-network betanet --output programs/cambrian/build/release-verification/cambrian.publish.abi.yaml
+    node --experimental-strip-types --import ./tests/register-typescript.mjs programs/cambrian/scripts/check-birth-abi-roundtrip.mjs
+    node programs/cambrian/scripts/verify-wallet-birth-release.mjs after
+
+The roundtrip script compares 12 synthetic SDK payloads with the official ABI
+code-generated builders, including byte-sorted account indices and legacy tag 0.
+Use `thru abi reflect --type-name CambrianInstruction --validate-only` on the
+generated `.bin` fixtures for CLI validation. These payloads contain synthetic
+proof bytes and must never be submitted to the chain.
+
+The release verifier is read-only on-chain and checks exact deployment addresses,
+authority, state, versions, and artifact hashes. Its `before` mode applies only to
+the original version-0 release and archived that binary and ABI locally without
+overwriting existing backups. Generated artifacts and backups are ignored by Git.
 
 ## Release checklist — requires separate approval
 

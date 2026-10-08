@@ -48,7 +48,7 @@ Important frontend variables:
 - VITE_CAMBRIAN_PROGRAM_ID and VITE_CAMBRIAN_ABI_ID
 - VITE_THRU_RPC_URL, VITE_THRU_WALLET_IFRAME_URL, and VITE_THRU_EXPLORER_URL
 - VITE_API_URL
-- VITE_CAMBRIAN_WALLET_BIRTH_ENABLED (false until the ownership upgrade is verified)
+- VITE_CAMBRIAN_WALLET_BIRTH_ENABLED (defaults to true for the verified release; false pauses new Births)
 
 Faucet configuration is server-only. See [API setup](apps/api/README.md).
 Never put private keys, recovery phrases, passkey authentication material, or
@@ -61,11 +61,22 @@ with a confirmed Birth on the existing deployment. Faucet funding was also
 tested through Thru Wallet.
 
 The legacy Birth instruction records the network fee payer as the organism
-controller, which can differ from the selected managed wallet. The new
-wallet_birth instruction and ABI are prepared locally to address this.
-New wallet-owned Birth is deliberately disabled until that program and ABI
-upgrade is deployed and verified. Enabling the frontend flag alone is not an
-upgrade.
+controller, which can differ from the selected managed wallet. On 2026-10-08,
+the same program was upgraded to version 1 and its ABI to revision 1 with the
+new wallet_birth instruction. Both on-chain artifacts were read back and matched
+the reviewed local bytes. Wallet-owned Birth is enabled for this exact program,
+ABI, and Betanet RPC; unverified deployment overrides remain disabled unless
+explicitly enabled. An explicit false frontend flag still pauses new Births.
+
+The upgraded flow completed a user-approved Birth in official Thru Wallet at
+slot 622115 on 2026-10-08. All four UI steps completed, and read-only RPC checks
+confirmed successful execution and a readable organism with the selected managed
+wallet stored as controller, not the fee payer (energy 2048, vitality 975).
+Wallet-scoped RPC discovery includes it for the managed wallet and excludes it
+for the fee payer. Public account bytes are preserved as a regression fixture.
+Live wallet A/B/empty-account switching in the UI still needs manual verification;
+offline isolation tests do not substitute for that check. See the
+[public release record](programs/cambrian/wallet-birth-release.json).
 
 Existing organism accounts remain on-chain. A program upgrade does not
 automatically change their controller; any transfer must be separately reviewed

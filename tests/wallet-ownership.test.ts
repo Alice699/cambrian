@@ -5,7 +5,9 @@ import { defaultCambrianConfig as config } from "../packages/config/src/index.ts
 import { listWalletCambrianOrganisms, isOrganismControlledBy, readOrganism } from "../packages/cambrian-sdk/src/read-service.ts";
 import { prepareBirthIntent } from "../packages/cambrian-sdk/src/client.ts";
 import { encodeBirthInstruction } from "../packages/cambrian-sdk/src/abi.ts";
+import { confirmBirthTransaction, type BirthTransactionUpdate } from "../packages/cambrian-sdk/src/transaction-service.ts";
 import { confirmedBirthAccount as fixture } from "./fixtures/confirmed-birth-account.ts";
+import { confirmedWalletBirthAccount as managedFixture } from "./fixtures/confirmed-wallet-birth-account.ts";
 
 const walletA = Pubkey.from(new Uint8Array(32).fill(0x44)).toThruFmt();
 const walletB = Pubkey.from(new Uint8Array(32).fill(0x55)).toThruFmt();
@@ -52,6 +54,52 @@ test("fee-payer-controlled legacy organisms are not claimed by a selected manage
   assert.equal(isOrganismControlledBy(record, fixture.controller), true);
 });
 
+test("real wallet Birth and legacy Birth remain isolated by their actual stored controllers", async () => {
+  const legacy = { ...account(fixture.controller, 0x71), address: Pubkey.from(fixture.address), data: { data: fixture.data.slice(), compressed: false } };
+  const managed = { ...account(managedFixture.controller, 0x72), address: Pubkey.from(managedFixture.address), data: { data: managedFixture.data.slice(), compressed: false } };
+  const { client } = clientFor([[legacy, managed]]);
+  const record = await readOrganism(client, managedFixture.address);
+  assert.equal(managedFixture.data.length, 264);
+  assert.equal(record.state.bornSlot, 622115n);
+  assert.equal(record.state.energy, 2048n);
+  assert.equal(record.state.vitality, 975n);
+  assert.equal(record.state.pulseCount, 0n);
+  assert.equal(Pubkey.from(record.state.controller).toThruFmt(), managedFixture.controller);
+  assert.notEqual(managedFixture.controller, managedFixture.feePayer);
+  assert.equal(isOrganismControlledBy(record, managedFixture.feePayer), false);
+  assert.deepEqual((await listWalletCambrianOrganisms(client, config, managedFixture.controller)).organisms.map(item => item.address), [managedFixture.address]);
+  assert.deepEqual((await listWalletCambrianOrganisms(client, config, managedFixture.feePayer)).organisms.map(item => item.address), [fixture.address]);
+  assert.deepEqual((await listWalletCambrianOrganisms(client, config, walletC)).organisms, []);
+});
+
+test("confirmed real wallet Birth becomes readable only for the intended managed controller without resubmission", async () => {
+  const { client } = clientFor([[{ ...account(managedFixture.controller, 0x72), address: Pubkey.from(managedFixture.address), data: { data: managedFixture.data.slice(), compressed: false } }]]);
+  client.transactions = {
+    sendAndTrack: () => { throw new Error("A confirmed Birth must never be resubmitted"); },
+    getStatus: () => { throw new Error("An already-confirmed receipt needs only account reads"); },
+  } as unknown as Thru["transactions"];
+  for (const controller of [managedFixture.controller, managedFixture.feePayer]) {
+    const updates: BirthTransactionUpdate[] = [];
+    const result = await confirmBirthTransaction(client, config, {
+      stage: "confirmed", signature: managedFixture.signature,
+      prepared: {
+        organismAddress: managedFixture.address,
+        seed: new Uint8Array(32), entropy: new Uint8Array(32), proof: new Uint8Array(),
+        intent: { programAddress: config.programId, walletAddress: controller, instructionData: "", review: { instruction: "wallet_birth" } },
+      },
+    }, { organismTimeoutMs: 0, onUpdate: update => updates.push(update) });
+    assert.equal(result.signature, managedFixture.signature);
+    if (controller === managedFixture.controller) {
+      assert.equal(result.organism?.address, managedFixture.address);
+      assert.equal(result.slot, 622115n);
+      assert.deepEqual(updates.map(update => update.stage), ["syncing", "confirmed"]);
+    } else {
+      assert.equal(result.organism, undefined);
+      assert.deepEqual(updates.map(update => update.stage), ["syncing"]);
+    }
+  }
+});
+
 test("cancelled wallet discovery performs no network read", async () => {
   const { client, calls } = clientFor([[account(walletA, 0x71)]]);
   const controller = new AbortController(); controller.abort();
@@ -72,7 +120,7 @@ test("duplicate pagination tokens fail clearly", async () => {
 
 test("wallet Birth is blocked before proof generation or approval until the upgraded program is enabled", async () => {
   const client = { proofs: { generate: () => { throw new Error("must not fetch a proof"); } } } as unknown as Thru;
-  await assert.rejects(() => prepareBirthIntent(client, config, { walletAddress: walletA, seed: "owned-birth", signingMode: "thru-wallet" }), /awaiting the program upgrade/);
+  await assert.rejects(() => prepareBirthIntent(client, { ...config, walletBirthEnabled: false }, { walletAddress: walletA, seed: "owned-birth", signingMode: "thru-wallet" }), /awaiting the program upgrade/);
 });
 
 test("wallet_birth encodes both account indices without changing legacy Birth bytes", () => {

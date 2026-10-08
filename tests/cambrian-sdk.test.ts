@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import {
   base64ToBytes,
   bytesToBase64,
@@ -9,9 +10,10 @@ import {
   utf8ToBytes32,
 } from "../packages/cambrian-sdk/src/abi.ts";
 import { CAMBRIAN_INSTRUCTION_ABI_NAME } from "../packages/cambrian-sdk/src/constants.ts";
-import { defaultCambrianConfig } from "../packages/config/src/index.ts";
+import { createCambrianConfig, defaultCambrianConfig } from "../packages/config/src/index.ts";
 import { assertBirthDeployment } from "../packages/cambrian-sdk/src/deployment.ts";
 import { prepareNativeTransferReview } from "../packages/cambrian-sdk/src/transfer.ts";
+import { confirmedWalletBirthAccount } from "./fixtures/confirmed-wallet-birth-account.ts";
 
 test("encodes birth instruction with the documented little-endian layout", () => {
   const seed = new Uint8Array(32).fill(0x11);
@@ -110,6 +112,44 @@ test("ships the verified Betanet deployment and qualified review ABI name", () =
   assert.equal(defaultCambrianConfig.programId, "taLnTXq4qblEsC-HkN4QG35Lp72Vnle8gk8UkiAtASymFD");
   assert.equal(defaultCambrianConfig.abiId, "taPciIseW9AzTnNaB6VJyhHkiOwEDfZYwUbdPdfvbvUQuS");
   assert.equal(CAMBRIAN_INSTRUCTION_ABI_NAME, "cambrian.lifeform.CambrianInstruction");
+  assert.equal(defaultCambrianConfig.walletBirthEnabled, true);
+});
+
+test("only the verified program, ABI, and Betanet RPC inherit enabled wallet Birth", () => {
+  assert.equal(createCambrianConfig().walletBirthEnabled, true);
+  assert.equal(createCambrianConfig({ walletBirthEnabled: false }).walletBirthEnabled, false);
+  for (const overrides of [
+    { programId: "another-program" }, { abiId: "another-abi" }, { rpcUrl: "https://unverified.example" },
+  ]) assert.equal(createCambrianConfig(overrides).walletBirthEnabled, false);
+  assert.equal(createCambrianConfig({ programId: "reviewed-program", walletBirthEnabled: true }).walletBirthEnabled, true);
+});
+
+test("enabled Birth defaults reference the public byte-verified wallet ownership release", () => {
+  const release = JSON.parse(readFileSync(new URL("../programs/cambrian/wallet-birth-release.json", import.meta.url), "utf8"));
+  assert.equal(release.network, defaultCambrianConfig.network);
+  assert.equal(release.rpcUrl, defaultCambrianConfig.rpcUrl);
+  assert.equal(release.programAddress, defaultCambrianConfig.programId);
+  assert.equal(release.abiAddress, defaultCambrianConfig.abiId);
+  assert.equal(release.programVersion, "1");
+  assert.equal(release.abiRevision, "1");
+  assert.equal(release.programUpgradeVmError, 0);
+  assert.equal(release.abiUpgradeVmError, 0);
+  assert.match(release.programSha256, /^[0-9a-f]{64}$/);
+  assert.match(release.publishedAbiSha256, /^[0-9a-f]{64}$/);
+  assert.equal(release.walletApprovalE2EStatus, "confirmed-first-wallet");
+  assert.equal(release.walletApprovalE2E.selectedWalletAddress, confirmedWalletBirthAccount.controller);
+  assert.equal(release.walletApprovalE2E.controllerAddress, confirmedWalletBirthAccount.controller);
+  assert.equal(release.walletApprovalE2E.feePayerAddress, confirmedWalletBirthAccount.feePayer);
+  assert.notEqual(release.walletApprovalE2E.controllerAddress, release.walletApprovalE2E.feePayerAddress);
+  assert.equal(release.walletApprovalE2E.organismAddress, confirmedWalletBirthAccount.address);
+  assert.equal(release.walletApprovalE2E.signature, confirmedWalletBirthAccount.signature);
+  assert.equal(release.walletApprovalE2E.slot, "622115");
+  assert.equal(release.walletApprovalE2E.vmError, 0);
+  assert.equal(release.walletApprovalE2E.programError, "0");
+  assert.equal(release.walletApprovalE2E.managedWalletContainsOrganism, true);
+  assert.equal(release.walletApprovalE2E.feePayerContainsOrganism, false);
+  assert.equal(release.liveAccountIsolationE2EStatus, "pending-user-wallet-switch");
+  assert.equal(release.legacyControllerTransfers, "none");
 });
 
 test("prepares native transfer review data without losing integer precision", () => {
