@@ -19,6 +19,8 @@ and account activity, and makes the organism transaction lifecycle visible.
 - Named wallet setup, transfers, and Cambrian actions, decoded from on-chain instructions
 - Separate recent wallet transaction and confirmed Cambrian action counts; failed/pending requests stay visible without counting as successful actions
 - Cursor-paginated Activity with 10 records per page, cached back navigation, and wallet-scoped refresh/retry
+- Wallet-approved Pulse with controller/state/slot preflight, the same four-stage stepper, verified trait read-back, and public-receipt-only pending recovery
+- Wallet-scoped organism selection; Overview defaults to the most recently active on-chain organism
 
 Cambrian no longer offers a local wallet. Previously stored local vaults are
 not erased by this change; the removed source remains recoverable in Git history.
@@ -81,6 +83,23 @@ Live wallet A/B/empty-account switching in the UI still needs manual verificatio
 offline isolation tests do not substitute for that check. See the
 [public release record](programs/cambrian/wallet-birth-release.json).
 
+Pulse is now connected to official wallet approval and canonical-byte submission.
+Offline SDK and React interaction tests exercise successful read-back, cancellation,
+execution failure, wallet switching, delayed status and read-only pending recovery.
+A user-approved live Pulse completed on 2026-10-09. Read-only Betanet RPC checks of
+organism `taKaRCbjm38tDppQw2uA-tdYEtkPUz1SbsNBsPmLyddeni` verified Pulse count 1,
+energy 1274, vitality 1024, and last-Pulse slot 696369 (Birth slot 696240).
+All four UI steps completed. This live check complements the offline tests;
+it does not validate every browser or wallet-switching scenario. Approval and signing follow the
+[official wallet lifecycle](https://thru.org/docs/wallet/approval-and-signing/).
+
+The deployed program only permits Pulse within 4,096 slots after Birth or the last
+Pulse, and rejects dead organisms. The UI checks this before approval and again
+before broadcasting, disables ineligible actions, and explains expiry without
+changing or deleting old records. Pulse can consume energy and vitality and does
+not guarantee a mutation. To test an expired organism's flow, create a new organism
+in Overview, then open Organisms promptly and approve Pulse there.
+
 Existing organism accounts remain on-chain. A program upgrade does not
 automatically change their controller; any transfer must be separately reviewed
 and approved by the currently authorized controller.
@@ -118,6 +137,10 @@ Wallet approval is not network confirmation. Birth is shown as complete only
 after successful execution and a readable organism with the expected controller.
 Pending public receipts are scoped to the wallet and program in sessionStorage.
 Checking a pending transaction or faucet claim never signs or sends it again.
+Pending Pulse reconciliation is scoped to the RPC, program and selected wallet;
+it stores only public receipt fields, never intents, signed bytes or passkey data.
+Pulse stays yellow after execution until the organism read shows an increased
+Pulse count and last-Pulse slot with the expected owner and controller.
 
 Missing deployment or payout configuration fails closed. Betanet assets are
 for testing only.

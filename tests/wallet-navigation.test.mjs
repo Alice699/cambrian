@@ -5,7 +5,11 @@ import { createRoot } from "react-dom/client";
 import { JSDOM } from "jsdom";
 import { createServer } from "vite";
 import { fileURLToPath } from "node:url";
-import { Pubkey } from "@thru/sdk";
+import { Pubkey, Transaction, keys } from "@thru/sdk";
+import { buildWalletAccountContext, encodeValidateInstruction, PASSKEY_MANAGER_PROGRAM_ADDRESS } from "@thru/programs/passkey-manager";
+import { defaultCambrianConfig } from "../packages/config/src/index.ts";
+import { base64ToBytes, bytesToBase64 } from "../packages/cambrian-sdk/src/abi.ts";
+import { savePendingPulse } from "../apps/web/src/pulse-receipts.ts";
 import { makeWalletSetupTransaction, makeWalletBirthTransaction } from "./fixtures/activity-transactions.ts";
 
 // Real React reconciliation and Cambrian read hooks, with an offline wallet/RPC.
@@ -492,4 +496,204 @@ test("leaving Activity invalidates a pending older-page response without restori
   assert.equal(document.querySelector(".activity-page-card"), null);
   assert.equal(document.querySelector(".wallet-launcher"), launcher);
   assert.equal(window.location.pathname, "/app/organisms");
+});
+
+// Pulse interaction tests use real SDK encoding/transport logic and synthetic
+// wallet bytes. There are no real WebAuthn credentials or chain submissions.
+async function setupPulseFixture() {
+  const program = defaultCambrianConfig.programId;
+  const organismA = Pubkey.from(new Uint8Array(32).fill(0x66)).toThruFmt();
+  const organismB = Pubkey.from(new Uint8Array(32).fill(0x77)).toThruFmt();
+  const privateKey = new Uint8Array(32).fill(0x21);
+  const feePayer = Pubkey.from(await keys.fromPrivateKey(privateKey)).toThruFmt();
+  const pulse = { approvals: 0, sends: 0, statusReads: 0, intents: [], slot: 125n, reject: false, vmError: 0,
+    approvalGate: null, sendGate: null, raw: null, signature: null, organismA, organismB,
+    states: new Map([[organismA, { controller: walletA, born: 100n, last: 123n, count: 0n, energy: 2048n, vitality: 768n }],
+      [organismB, { controller: walletB, born: 101n, last: 123n, count: 0n, energy: 1900n, vitality: 700n }]]) };
+  const account = address => {
+    const state = pulse.states.get(address);
+    if (!state) return { address: Pubkey.from(address), meta: { balance: fixture.balances.get(address) ?? 0n, dataSize: 0 } };
+    const data = new Uint8Array(264); const view = new DataView(data.buffer);
+    view.setUint32(0, 0x43414d42, true); view.setUint8(4, 1); view.setUint8(5, 1);
+    data.set(Pubkey.from(state.controller).toBytes(), 8);
+    view.setBigUint64(200, state.born, true); view.setBigUint64(208, state.last, true);
+    view.setBigUint64(224, state.energy, true); view.setBigUint64(232, state.vitality, true); view.setBigUint64(240, state.count, true);
+    return { address: Pubkey.from(address), meta: { owner: Pubkey.from(program), dataSize: 264, seq: state.count + 1n }, data: { data, compressed: false } };
+  };
+  fixture.client.node = { getStatus: async () => ({ ready: true, locallyExecutedSlot: pulse.slot }) };
+  fixture.client.accounts.get = async address => account(typeof address === "string" ? address : address.toThruFmt());
+  fixture.client.accounts.list = async () => ({ accounts: [...pulse.states.keys()].map(account), page: {} });
+  fixture.wallet.wallet = { connected: true,
+    getSigningContext: async () => ({ selectedAccountPublicKey: fixture.wallet.selectedAccount.address }),
+    signTransaction: async intent => {
+      pulse.approvals++;
+      pulse.intents.push(intent);
+      if (pulse.approvalGate) await pulse.approvalGate;
+      if (pulse.reject) throw new Error("Pulse approval rejected");
+      const context = buildWalletAccountContext({ walletAddress: intent.walletAddress,
+        readWriteAccounts: intent.readWriteAddresses.map(address => Pubkey.from(address).toBytes()), readOnlyAccounts: intent.readOnlyAddresses.map(address => Pubkey.from(address).toBytes()) });
+      const tx = new Transaction({ feePayer, program: PASSKEY_MANAGER_PROGRAM_ADDRESS,
+        header: { fee: 1n, nonce: BigInt(pulse.approvals), startSlot: pulse.slot, stateUnits: intent.stateUnits },
+        accounts: { readWriteAccounts: intent.readWriteAddresses, readOnlyAccounts: intent.readOnlyAddresses },
+        instructionData: encodeValidateInstruction({ walletAccountIdx: context.walletAccountIdx, authIdx: 0,
+          targetInstruction: { programIdx: context.getAccountIndex(Pubkey.from(program).toBytes()), instructionData: base64ToBytes(intent.instructionData) },
+          signatureR: new Uint8Array(32).fill(1), signatureS: new Uint8Array(32).fill(2), authenticatorData: new Uint8Array(37),
+          clientDataJSON: new TextEncoder().encode('{"type":"webauthn.get","origin":"https://test.invalid"}') }),
+      });
+      await tx.sign(privateKey); pulse.raw = tx.toWire(); pulse.signature = tx.getSignature().toThruFmt();
+      return bytesToBase64(pulse.raw);
+    },
+  };
+  fixture.client.transactions.sendAndTrack = async function* (raw) {
+    pulse.sends++;
+    assert.deepEqual(raw, pulse.raw);
+    if (pulse.sendGate) { await pulse.sendGate; throw new Error("Stream interrupted"); }
+    if (!pulse.vmError) {
+      const state = pulse.states.get(organismA); state.count++; state.last = pulse.slot; state.energy = 2020n; state.vitality = 769n; pulse.slot++;
+    }
+    yield { status: 2 };
+    yield { executionResult: { vmError: pulse.vmError, userErrorCode: pulse.vmError ? 0xca010010n : 0n } };
+  };
+  fixture.client.transactions.getStatus = async () => { pulse.statusReads++; return { executionResult: { vmError: 0, userErrorCode: 0n } }; };
+  return pulse;
+}
+
+test("Pulse updates real traits after approval, keeps the wallet launcher and labels Activity", async () => {
+  const pulse = await setupPulseFixture();
+  const launcher = document.querySelector(".wallet-launcher");
+  await click('.sidebar-nav a[href="/app/organisms"]');
+  assert.equal(document.querySelector(".pulse-submit").disabled, false);
+  assert.equal(document.querySelectorAll(".organism-selector").length, 0, "Wallet B's organism must not enter A's selection");
+  await click(".pulse-submit");
+  assert.equal(pulse.approvals, 1); assert.equal(pulse.sends, 1);
+  assert.match(document.querySelector(".trait-section").textContent, /2020.*769.*1/);
+  assert.match(document.querySelector('[aria-label="Pulse transaction progress"]').textContent, /Pulse complete.*4 of 4 steps complete/);
+  assert.ok(document.querySelector(".birth-progress.is-success"));
+  assert.equal(document.querySelector(".wallet-launcher"), launcher);
+  const tx = Transaction.fromWire(pulse.raw); tx.executionResult = { vmError: 0, userErrorCode: 0n };
+  fixture.client.transactions.listForAccount = async () => ({ transactions: [tx], page: {} });
+  await click('.sidebar-nav a[href="/app/activity"]');
+  assert.match(document.querySelector(".activity-timeline").textContent, /Organism pulse.*Confirmed/);
+  assert.equal(document.querySelector(".wallet-launcher"), launcher);
+});
+
+test("Pulse locks repeated clicks while awaiting approval and reports rejection without sending", async () => {
+  const pulse = await setupPulseFixture(); let release;
+  pulse.approvalGate = new Promise(resolve => { release = resolve; }); pulse.reject = true;
+  await click('.sidebar-nav a[href="/app/organisms"]');
+  const button = document.querySelector(".pulse-submit");
+  await act(async () => { button.dispatchEvent(new MouseEvent("click", { bubbles: true })); button.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
+  assert.equal(pulse.approvals, 1);
+  assert.equal(document.querySelector(".pulse-submit").disabled, true);
+  assert.match(document.querySelector(".birth-progress.is-pending").textContent, /Confirm Pulse in Thru Wallet/);
+  await act(async () => { release(); });
+  assert.equal(pulse.sends, 0);
+  assert.match(document.querySelector(".birth-progress.is-error").textContent, /approval rejected/);
+  assert.equal(document.querySelector(".pulse-submit").disabled, false);
+});
+
+test("a second deliberate Pulse uses a new approval, nonce and baseline rather than replaying the completed receipt", async () => {
+  const pulse = await setupPulseFixture();
+  await click('.sidebar-nav a[href="/app/organisms"]'); await click(".pulse-submit");
+  const first = pulse.signature;
+  await click(".pulse-submit");
+  assert.equal(pulse.approvals, 2); assert.equal(pulse.sends, 2); assert.notEqual(pulse.signature, first);
+  assert.equal(pulse.states.get(pulse.organismA).count, 2n);
+  assert.match(document.querySelector(".trait-section").textContent, /PULSE COUNT2/);
+  assert.ok(document.querySelector(".birth-progress.is-success"));
+  assert.equal(sessionStorage.length, 0);
+});
+
+for (const change of ["switch", "disconnect", "navigate"]) {
+  test(`a ${change} during Pulse approval cancels sending and suppresses the previous wallet's state`, async () => {
+    const pulse = await setupPulseFixture(); let release;
+    pulse.approvalGate = new Promise(resolve => { release = resolve; });
+    await click('.sidebar-nav a[href="/app/organisms"]'); await click(".pulse-submit");
+    if (change === "navigate") await click('.sidebar-nav a[href="/app/activity"]');
+    else await act(async () => { fixture.wallet.selectedAccount = change === "switch" ? { address: walletB, label: "Wallet B" } : null; fixture.wallet.isConnected = change === "switch"; root.render(createElement(App)); });
+    await act(async () => { release(); });
+    assert.equal(pulse.approvals, 1); assert.equal(pulse.sends, 0);
+    assert.equal(document.querySelector('[aria-label="Pulse transaction progress"]'), null);
+    if (change === "switch") assert.match(document.querySelector(".trait-section").textContent, /1900.*700.*0/);
+    if (change === "disconnect") assert.equal(document.querySelector(".pulse-submit"), null);
+  });
+}
+
+test("expired eligibility disables Pulse and a read-only refresh never requests signing", async () => {
+  const pulse = await setupPulseFixture(); pulse.slot = 5000n;
+  await click('.sidebar-nav a[href="/app/organisms"]');
+  assert.equal(document.querySelector(".pulse-submit").disabled, true);
+  assert.match(document.querySelector(".pulse-eligibility").textContent, /Pulse window expired/);
+  await click(".pulse-refresh");
+  assert.equal(pulse.approvals, 0); assert.equal(pulse.sends, 0);
+});
+
+test("owned organism selection defaults to latest activity and locks while Pulse approval is open", async () => {
+  const pulse = await setupPulseFixture(); let release;
+  const latest = Pubkey.from(new Uint8Array(32).fill(0x88)).toThruFmt();
+  pulse.states.set(latest, { ...pulse.states.get(pulse.organismA), born: 120n, last: 124n });
+  pulse.approvalGate = new Promise(resolve => { release = resolve; });
+  await click('.sidebar-nav a[href="/app/organisms"]');
+  assert.equal(document.querySelector("#organism-selection").value, latest);
+  assert.equal(document.querySelectorAll("#organism-selection option").length, 2);
+  await act(async () => { const select = document.querySelector("#organism-selection"); select.value = pulse.organismA; select.dispatchEvent(new dom.window.Event("change", { bubbles: true })); });
+  await click(".pulse-submit");
+  assert.equal(document.querySelector("#organism-selection").disabled, true);
+  assert.ok(pulse.intents[0].readWriteAddresses.includes(pulse.organismA));
+  assert.ok(!pulse.intents[0].readWriteAddresses.includes(latest));
+  await click('.sidebar-nav a[href="/app/activity"]'); await act(async () => { release(); });
+  assert.equal(pulse.sends, 0);
+});
+
+test("unavailable Pulse eligibility blocks signing and a read-only retry restores it", async () => {
+  const pulse = await setupPulseFixture();
+  fixture.client.node.getStatus = async () => { throw new Error("Network eligibility unavailable"); };
+  await click('.sidebar-nav a[href="/app/organisms"]');
+  assert.equal(document.querySelector(".pulse-submit").disabled, true);
+  assert.match(document.querySelector(".pulse-eligibility.is-error").textContent, /unavailable/);
+  fixture.client.node.getStatus = async () => ({ ready: true, locallyExecutedSlot: 125n });
+  await click(".pulse-refresh");
+  assert.equal(document.querySelector(".pulse-submit").disabled, false);
+  assert.equal(pulse.approvals, 0); assert.equal(pulse.sends, 0);
+});
+
+test("failed Pulse is red and preserves its explorer signature, without incrementing traits", async () => {
+  const pulse = await setupPulseFixture(); pulse.vmError = -765;
+  await click('.sidebar-nav a[href="/app/organisms"]'); await click(".pulse-submit");
+  const status = document.querySelector(".birth-progress.is-error");
+  assert.match(status.textContent, /Pulse execution failed/);
+  assert.ok(status.querySelector(`a[href*="${pulse.signature}"]`));
+  assert.equal(pulse.sends, 1);
+  assert.match(document.querySelector(".trait-section").textContent, /2048.*768.*0/);
+  assert.equal(sessionStorage.length, 0);
+});
+
+test("refresh restores only a wallet-scoped Pulse receipt, and Check status never signs or sends again", async () => {
+  const pulse = await setupPulseFixture();
+  const signature = "ts" + "a".repeat(88);
+  const state = pulse.states.get(pulse.organismA); state.count = 1n; state.last = 125n; state.energy = 2020n; state.vitality = 769n;
+  savePendingPulse(sessionStorage, defaultCambrianConfig, walletA, { stage: "submitted", signature, walletAddress: walletA,
+    programId: defaultCambrianConfig.programId, organismAddress: pulse.organismA, baselinePulseCount: 0n, lastPulseSlot: 123n });
+  await click('.sidebar-nav a[href="/app/organisms"]');
+  assert.match(document.querySelector(".pulse-submit").textContent, /Check Pulse status/);
+  await click(".birth-progress-links button");
+  assert.equal(pulse.approvals, 0); assert.equal(pulse.sends, 0); assert.equal(pulse.statusReads, 1);
+  assert.match(document.querySelector(".birth-progress.is-success").textContent, /Pulse complete/);
+  assert.equal(sessionStorage.length, 0);
+});
+
+test("navigation during a silent Pulse submission retains the public receipt and permits read-only recovery", async () => {
+  const pulse = await setupPulseFixture(); let release;
+  pulse.sendGate = new Promise(resolve => { release = resolve; });
+  await click('.sidebar-nav a[href="/app/organisms"]'); await click(".pulse-submit");
+  assert.equal(pulse.sends, 1); assert.equal(sessionStorage.length, 1);
+  await click('.sidebar-nav a[href="/app/activity"]');
+  await act(async () => { release(); });
+  assert.equal(document.querySelector('[aria-label="Pulse transaction progress"]'), null);
+  const state = pulse.states.get(pulse.organismA); state.count = 1n; state.last = 125n; state.energy = 2020n;
+  await click('.sidebar-nav a[href="/app/organisms"]');
+  await click(".birth-progress-links button");
+  assert.equal(pulse.approvals, 1); assert.equal(pulse.sends, 1);
+  assert.ok(document.querySelector(".birth-progress.is-success"));
+  assert.equal(sessionStorage.length, 0);
 });

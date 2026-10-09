@@ -16,6 +16,7 @@ import "./feedback.css";
 import "./dashboard-polish.css";
 import "./activity.css";
 import "./transaction-progress.css";
+import "./pulse.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

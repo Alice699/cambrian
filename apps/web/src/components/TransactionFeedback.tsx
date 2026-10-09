@@ -1,5 +1,5 @@
-import type { BirthTransactionUpdate, CambrianTransactionSummary } from "@cambrian/sdk";
-import { birthPresentation, type FeedbackTone } from "../transaction-model";
+import type { BirthTransactionUpdate, PulseTransactionUpdate, CambrianTransactionSummary } from "@cambrian/sdk";
+import { birthPresentation, pulsePresentation, type FeedbackTone } from "../transaction-model";
 import { AddressDisplay } from "./AddressDisplay";
 import { UiIcon, type UiIconName } from "./UiIcon";
 import { explorerLink } from "../explorer";
@@ -50,15 +50,23 @@ const BIRTH_CURRENT_COPY: Record<BirthTransactionUpdate["stage"], string> = {
   failed: "Not completed",
 };
 
-export function BirthStatus({ update, account, onCheck, busy = false }: {
-  update: BirthTransactionUpdate | null; account: string | null; onCheck?: () => void; busy?: boolean;
+export function BirthStatus(props: { update: BirthTransactionUpdate | null; account: string | null; onCheck?: () => void; busy?: boolean }) {
+  return <OrganismTransactionStatus {...props} action="Birth" />;
+}
+
+export function PulseStatus(props: { update: PulseTransactionUpdate | null; account: string | null; onCheck?: () => void; busy?: boolean }) {
+  return <OrganismTransactionStatus {...props} action="Pulse" />;
+}
+
+function OrganismTransactionStatus({ update, account, onCheck, busy = false, action }: {
+  update: BirthTransactionUpdate | PulseTransactionUpdate | null; account: string | null; onCheck?: () => void; busy?: boolean; action: "Birth" | "Pulse";
 }) {
   if (!update) return null;
-  const state = birthPresentation(update.stage, Boolean(update.signature));
-  return <section className={`birth-progress is-${state.tone}`} data-stage={update.stage} aria-label="Birth transaction progress">
+  const state = (action === "Pulse" ? pulsePresentation : birthPresentation)(update.stage, Boolean(update.signature));
+  return <section className={`birth-progress is-${state.tone}`} data-stage={update.stage} aria-label={`${action} transaction progress`}>
     <div className="birth-progress-heading" role={state.tone === "error" ? "alert" : "status"} aria-live="polite" aria-atomic="true">
       <StatusIcon tone={state.tone} spinning={state.tone === "pending"} />
-      <div className="birth-progress-copy"><p>THRU WALLET / BIRTH</p><h2>{state.title}</h2><span>{update.error?.message ?? state.description}</span></div>
+      <div className="birth-progress-copy"><p>THRU WALLET / {action.toUpperCase()}</p><h2>{state.title}</h2><span>{update.error?.message ?? state.description}</span></div>
       <div className="birth-progress-summary"><span className={`feedback-badge is-${state.tone}`}><UiIcon name={state.tone === "success" ? "check" : state.tone === "error" ? "alert" : "activity"} />{state.label}</span><span className="birth-network"><i aria-hidden="true" />Thru Betanet</span></div>
     </div>
     <div className="birth-progress-body">
@@ -70,7 +78,7 @@ export function BirthStatus({ update, account, onCheck, busy = false }: {
           const failed = current && state.tone === "error";
           return <li key={step.label} className={complete ? "is-complete" : current ? `is-current${failed ? " is-error" : ""}` : "is-waiting"} aria-current={current ? "step" : undefined}>
             <span className="step-node" aria-hidden="true"><UiIcon name={complete ? "check" : failed ? "alert" : step.icon} /></span>
-            <span className="step-copy"><strong><span className="step-ordinal">0{index + 1}</span>{step.label}</strong><small>{complete ? step.completed : current ? BIRTH_CURRENT_COPY[update.stage] : "Waiting for previous step"}</small></span>
+            <span className="step-copy"><strong><span className="step-ordinal">0{index + 1}</span>{step.label}</strong><small>{complete ? action === "Pulse" && index === 3 ? "Updated Pulse state verified" : step.completed : current ? BIRTH_CURRENT_COPY[update.stage] : "Waiting for previous step"}</small></span>
           </li>;
         })}
       </ol>

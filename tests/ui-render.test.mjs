@@ -160,6 +160,19 @@ test("the stepper remains absent before an action rather than displaying a fake 
   assert.equal(renderToStaticMarkup(createElement(components.BirthStatus, { update: null, account: "public-account" })), "");
 });
 
+test("Pulse reuses the four real steps, with pending, syncing, verified and failed states", () => {
+  for (const [stage, tone, count, copy] of [["awaiting-approval", "pending", 0, "Confirm Pulse in Thru Wallet"], ["submitted", "pending", 2, "Waiting for confirmation"], ["syncing", "pending", 3, "syncing Pulse state"], ["confirmed", "success", 4, "Pulse complete"], ["failed", "error", 2, "Pulse was not completed"]]) {
+    const html = renderToStaticMarkup(createElement(components.PulseStatus, { account: "public-account", update: { stage, signature: "public-pulse-receipt" }, onCheck: () => {} }));
+    assert.match(html, new RegExp(`birth-progress is-${tone}`));
+    assert.match(html, /aria-label="Pulse transaction progress"/);
+    assert.match(html, new RegExp(`aria-valuenow="${count}"`));
+    assert.match(html, new RegExp(copy));
+    assert.doesNotMatch(html, /THRU WALLET \/ BIRTH|[↗↖↘↙→←⇒➜]/);
+    if (stage === "submitted" || stage === "syncing") assert.match(html, /Check status/);
+    if (stage === "confirmed") assert.match(html, /Updated Pulse state verified/);
+  }
+});
+
 test("pagination describes only known pages and uses clear text controls, without inventing a total", () => {
   const render = extra => renderToStaticMarkup(createElement(activity.ActivityPagination, {
     page: 1, count: 10, pageSize: 10, hasNext: true, busy: false,

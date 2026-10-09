@@ -7,3 +7,6 @@ export const CAMBRIAN_BIRTH_STATE_UNITS = 1;
 /** Canonical v1 account header from the deployed Cambrian C program. */
 export const CAMBRIAN_ORGANISM_MAGIC = 0x43414d42;
 export const CAMBRIAN_ORGANISM_VERSION = 1;
+
+/** The deployed program rejects Pulse beyond this many slots since the last one. */
+export const CAMBRIAN_MAX_PULSE_ELAPSED = 4096n;

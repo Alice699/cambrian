@@ -1,0 +1,40 @@
+.organism-selector { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 0 0 18px; }
+.organism-selector label { color: #485f45; font-size: 13px; font-weight: 500; }
+.organism-selector select { min-width: 240px; max-width: 100%; padding: 10px 14px; border: 1px solid #d9e2d0; border-radius: 10px; color: #273c29; background: #fcfdf7; font: 500 13px/20px "IBM Plex Sans", sans-serif; }
+.organism-selector > span { color: #7c8a72; font-size: 12px; }
+.pulse-card { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; gap: 22px; align-items: start; margin-top: 22px; padding: 28px 30px; border: 1px solid #dbe3d5; border-radius: 18px; background: #fdfefa; }
+.pulse-card-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 14px; background: #eaf2e2; color: #47663d; }
+.pulse-card-icon > svg { width: 24px; height: 24px; }
+.pulse-card-copy { min-width: 0; }
+.pulse-card-copy .panel-label { margin: 0 0 7px; }
+.pulse-card-copy h2 { margin: 0 0 10px; color: #273c29; font: 600 24px/30px "Space Grotesk", sans-serif; letter-spacing: -.5px; }
+.pulse-card-copy > p:not(.panel-label) { max-width: 680px; margin: 0; color: #687664; font: 400 14px/22px "IBM Plex Sans", sans-serif; }
+.pulse-eligibility { display: flex; align-items: flex-start; gap: 8px; max-width: 700px; margin-top: 15px; color: #7d662a; font: 400 12px/19px "IBM Plex Sans", sans-serif; }
+.pulse-eligibility > i { flex: 0 0 6px; height: 6px; margin-top: 6px; border-radius: 50%; background: #c69b3f; }
+.pulse-eligibility > i.is-ready { background: #38764c; }
+.pulse-eligibility:has(.is-ready) { color: #537048; }
+.pulse-eligibility.is-error { color: #a03b42; }
+.pulse-eligibility.is-error > i { background: #a03b42; }
+.pulse-card-actions { display: grid; gap: 9px; min-width: 185px; }
+.pulse-card-actions button { display: flex; justify-content: center; align-items: center; gap: 8px; min-height: 43px; padding: 10px 15px; border-radius: 10px; font: 500 13px/20px "IBM Plex Sans", sans-serif; cursor: pointer; transition: background .2s, border-color .2s; }
+.pulse-submit { color: #fff; border: 1px solid #2c7448; background: #2c7448; }
+.pulse-submit:hover:not(:disabled) { background: #235e3a; }
+.pulse-refresh { color: #5e7354; border: 1px solid #dbe3d5; background: #f6f9ef; }
+.pulse-refresh:hover:not(:disabled) { background: #edf4e6; }
+.pulse-card-actions button:disabled { opacity: .55; cursor: not-allowed; }
+.pulse-card-actions small { text-align: center; color: #839079; font-size: 11px; line-height: 18px; }
+.pulse-birth-link { display: flex; align-items: center; justify-content: center; gap: 7px; padding: 8px; color: #47663d; font: 500 12px/19px "IBM Plex Sans", sans-serif; text-decoration: none; border-radius: 8px; }
+.pulse-birth-link:hover { background: #edf4e6; }
+.pulse-card button:focus-visible, .organism-selector select:focus-visible { outline: 2px solid #62864b; outline-offset: 3px; }
+@media (max-width: 960px) {
+  .pulse-card { grid-template-columns: 40px minmax(0, 1fr); gap: 16px; padding: 24px; }
+  .pulse-card-icon { width: 40px; height: 40px; }
+  .pulse-card-actions { grid-column: 2; justify-items: stretch; max-width: 280px; }
+}
+@media (max-width: 520px) {
+  .pulse-card { grid-template-columns: minmax(0, 1fr); padding: 22px 20px; }
+  .pulse-card-actions { grid-column: 1; max-width: none; }
+  .pulse-card-copy h2 { font-size: 22px; }
+  .organism-selector select { width: 100%; min-width: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .pulse-card button { transition: none; } }

@@ -53,6 +53,22 @@ export function utf8ToBytes32(value: string): Uint8Array {
   return padded;
 }
 
+/** Tag 1, packed u16 organism index and u64 catalyst, both little-endian. */
+export function encodePulseInstruction(organismAccountIndex: number, catalyst: bigint): Uint8Array {
+  if (!Number.isInteger(organismAccountIndex) || organismAccountIndex < 2 || organismAccountIndex > 0xffff) {
+    throw new Error("organismAccountIndex must reference a writable organism account");
+  }
+  if (typeof catalyst !== "bigint" || catalyst < 0n || catalyst > 0xffff_ffff_ffff_ffffn) {
+    throw new Error("catalyst must fit in an unsigned 64-bit integer");
+  }
+  const bytes = new Uint8Array(11);
+  const view = new DataView(bytes.buffer);
+  bytes[0] = 1;
+  view.setUint16(1, organismAccountIndex, true);
+  view.setBigUint64(3, catalyst, true);
+  return bytes;
+}
+
 export function randomBytes32(): Uint8Array {
   const bytes = new Uint8Array(BYTES32_LENGTH);
   crypto.getRandomValues(bytes);
