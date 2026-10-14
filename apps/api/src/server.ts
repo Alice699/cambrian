@@ -129,7 +129,7 @@ export function createApiServer(options: ApiServerOptions = {}) {
     }
 
     const path = (request.url ?? "/").split("?")[0];
-    if (request.method === "GET" && path === "/health") {
+    if (request.method === "GET" && (path === "/health" || path === "/api/health")) {
       writeJson(response, 200, {
         ok: true,
         network: "betanet",

@@ -33,14 +33,13 @@ connection approval, and signing remain inside the official Thru Wallet UI.
 Requires Node.js 22 or newer and npm.
 
     npm install
-    npm run api:dev
-
-In another terminal:
-
     npm run dev
 
-Open http://127.0.0.1:5173. The API listens on http://127.0.0.1:8787.
-The Vite proxy forwards same-origin /api requests to the API.
+This starts the API first, waits for its health check, and then starts the frontend.
+A healthy existing Cambrian API is reused. Open http://127.0.0.1:5173.
+The API listens on http://127.0.0.1:8787 by default; the Vite proxy follows
+API_PORT and forwards same-origin /api requests to it. Use npm run dev:web
+and npm run api:dev only when running the services separately.
 
 ## Configuration
 

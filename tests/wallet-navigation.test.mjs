@@ -180,6 +180,10 @@ test("a mocked faucet receipt refreshes the shared wallet without remounting it 
   const launcher = document.querySelector(".wallet-launcher");
   let claims = 0;
   globalThis.fetch = async (url, options) => {
+    if (options.method === "GET") {
+      assert.match(url, /\/health$/);
+      return { ok: true, status: 200, json: async () => ({ ok: true, network: "betanet", faucet: { configured: true, amount: "100" } }) };
+    }
     assert.match(url, /\/faucet\/claim$/);
     assert.equal(options.method, "POST");
     assert.deepEqual(JSON.parse(options.body), { address: walletA });
@@ -205,6 +209,9 @@ test("a pending mocked faucet request is aborted on page change and cannot updat
   const launcher = document.querySelector(".wallet-launcher");
   let resolveClaim, signal, claims = 0;
   globalThis.fetch = async (_url, options) => {
+    if (options.method === "GET") {
+      return { ok: true, status: 200, json: async () => ({ ok: true, network: "betanet", faucet: { configured: true, amount: "100" } }) };
+    }
     claims++;
     signal = options.signal;
     return new Promise(resolve => { resolveClaim = resolve; });
@@ -223,6 +230,22 @@ test("a pending mocked faucet request is aborted on page change and cannot updat
   assert.equal(document.querySelector(".faucet-feedback"), null);
   assert.equal(fixture.reads.length, reads);
   assert.equal(claims, 1);
+});
+
+test("an unavailable faucet API shows an actionable failure without submitting or locking the wallet into a pending claim", async () => {
+  const methods = [];
+  globalThis.fetch = async (_url, options) => {
+    methods.push(options.method);
+    return { ok: false, status: 502, json: async () => { throw new SyntaxError("Empty proxy response"); } };
+  };
+  await click(".dashboard-page-actions .faucet-button");
+  assert.deepEqual(methods, ["GET"]);
+  assert.match(document.querySelector(".faucet-feedback").textContent, /npm run dev/);
+  assert.equal(document.querySelector(".dashboard-page-actions .faucet-button").disabled, false);
+  assert.match(document.querySelector(".dashboard-page-actions .faucet-button").textContent, /Get test THRU/);
+  assert.match(document.querySelector(".wallet-launcher").textContent, /200 THRU/);
+  assert.equal(fixture.deposits, 0);
+  assert.equal(fixture.connects, 0);
 });
 
 test("the persistent launcher refreshes its balance after a completed official Add funds action", async () => {

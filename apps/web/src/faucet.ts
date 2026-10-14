@@ -32,8 +32,45 @@ function createIdempotencyKey() {
   return randomId ?? "cambrian-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
 }
 
+const API_UNAVAILABLE_MESSAGE =
+  "Faucet API belum aktif atau route /api tidak tersambung. Untuk localhost, jalankan npm run dev.";
+
+async function checkFaucetAvailability(baseUrl: string, signal?: AbortSignal): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(baseUrl + "/health", {
+      method: "GET",
+      headers: { accept: "application/json" },
+      signal: AbortSignal.any([AbortSignal.timeout(4_000), ...(signal ? [signal] : [])]),
+    });
+  } catch (cause) {
+    if (signal?.aborted) throw cause;
+    throw new FaucetApiError(API_UNAVAILABLE_MESSAGE, { status: 0, code: "api-unavailable" });
+  }
+
+  let payload: unknown = null;
+  try { payload = await response.json(); } catch { /* A proxy or HTML page is not a ready faucet API. */ }
+  signal?.throwIfAborted();
+  const health = payload && typeof payload === "object"
+    ? payload as { ok?: unknown; network?: unknown; faucet?: { configured?: unknown } }
+    : null;
+  if (!response.ok || health?.ok !== true || health.network !== "betanet"
+    || typeof health.faucet?.configured !== "boolean") {
+    throw new FaucetApiError(API_UNAVAILABLE_MESSAGE, {
+      status: response.status, code: "api-unavailable",
+    });
+  }
+  if (!health.faucet.configured) {
+    throw new FaucetApiError("Faucet Betanet belum dikonfigurasi pada API.", {
+      status: 503, code: "not-configured",
+    });
+  }
+}
+
 export async function claimFaucet(address: string, signal?: AbortSignal): Promise<FaucetApiReceipt> {
   const baseUrl = apiBaseUrl.replace(/\/$/, "");
+  await checkFaucetAvailability(baseUrl, signal);
+  signal?.throwIfAborted();
   let response: Response;
 
   try {

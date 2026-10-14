@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createApiServer } from "../apps/api/src/server.ts";
 import {
   FaucetError,
   FaucetService,
@@ -125,4 +126,24 @@ test("unconfigured faucet never reports a successful payout", async () => {
     () => service.claim({ address, ip: "127.0.0.1" }),
     (error: unknown) => error instanceof FaucetError && error.code === "not-configured" && error.statusCode === 503,
   );
+});
+
+test("both direct and prefixed health routes are read-only and do not expose provider secrets", async (t) => {
+  const { provider, getCalls } = createProvider();
+  const service = new FaucetService({
+    policy: { amount: 100n, cooldownMs: 60_000, windowMs: 60_000, maxRequestsPerWindow: 3 },
+    provider,
+  });
+  const server = createApiServer({ service });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise<void>(resolve => server.close(() => resolve())));
+  const binding = server.address();
+  assert.ok(binding && typeof binding === "object");
+  for (const route of ["/health", "/api/health"]) {
+    const response = await fetch(`http://127.0.0.1:${binding.port}${route}`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.deepEqual(await response.json(), { ok: true, network: "betanet", faucet: { configured: true, amount: "100" } });
+  }
+  assert.equal(getCalls(), 0);
 });

@@ -2,15 +2,25 @@
 
 API boundary for server-only operations such as the native Betanet faucet.
 
-Run the local API with:
+Run the frontend and local API together from the repository root:
+
+    npm run dev
+
+The launcher waits for the API health check before starting the frontend and
+reuses an already running Cambrian API. To run only the API:
 
     npm run api:dev
 
-The default server listens on 127.0.0.1:8787. When VITE_API_URL is empty, the
+The default server listens on 127.0.0.1:8787 (or API_PORT). When VITE_API_URL is empty, the
 web app calls /api on its own origin. Vite forwards those requests to the API,
 so a change of local frontend port does not cause a CORS failure. Restart the
 Vite dev server after adding or changing its proxy configuration. In production,
 route /api to this service or set VITE_API_URL to the API origin.
+
+The frontend checks GET /health through that same API origin before submitting
+a claim. An unavailable API, missing production route, or disabled provider
+produces an actionable error without sending a payout request. An uncertain
+response after submission still uses read-only balance reconciliation.
 
 The faucet is deliberately disabled until an amount and a payout provider are
 configured:
