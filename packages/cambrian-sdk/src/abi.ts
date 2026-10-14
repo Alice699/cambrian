@@ -69,6 +69,57 @@ export function encodePulseInstruction(organismAccountIndex: number, catalyst: b
   return bytes;
 }
 
+/** Tag 2 + two distinct u16 account indices + a u64 catalyst, packed little-endian. */
+export function encodeEncounterInstruction(actorAccountIndex: number, donorAccountIndex: number, catalyst: bigint): Uint8Array {
+  for (const index of [actorAccountIndex, donorAccountIndex]) {
+    if (!Number.isInteger(index) || index < 2 || index > 0xffff) {
+      throw new Error("Encounter indices must reference organism accounts");
+    }
+  }
+  if (actorAccountIndex === donorAccountIndex) throw new Error("Choose two different organisms");
+  if (typeof catalyst !== "bigint" || catalyst < 0n || catalyst > 0xffff_ffff_ffff_ffffn) {
+    throw new Error("catalyst must fit in an unsigned 64-bit integer");
+  }
+  const bytes = new Uint8Array(13);
+  const view = new DataView(bytes.buffer);
+  bytes[0] = 2;
+  view.setUint16(1, actorAccountIndex, true);
+  view.setUint16(3, donorAccountIndex, true);
+  view.setBigUint64(5, catalyst, true);
+  return bytes;
+}
+
+export interface CambrianEncounterEvent {
+  actor: Uint8Array;
+  donor: Uint8Array;
+  compatibility: number;
+  outcome: 1 | 2 | 3;
+  geneTransferred: boolean;
+  energyBefore: bigint;
+  energyAfter: bigint;
+  encounterCount: bigint;
+  genome: Uint8Array;
+  memory: Uint8Array;
+}
+
+/** The C program emits tag 2 immediately before its packed 156-byte event. */
+export function decodeEncounterEvent(bytes: Uint8Array): CambrianEncounterEvent {
+  if (bytes.length !== 157 || bytes[0] !== 2) throw new Error("Invalid Encounter event layout");
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const compatibility = view.getUint16(65, true);
+  const outcome = view.getUint8(67);
+  const transferred = view.getUint8(68);
+  if (compatibility > 256 || ![1, 2, 3].includes(outcome) || transferred > 1) {
+    throw new Error("Invalid Encounter event values");
+  }
+  return {
+    actor: bytes.slice(1, 33), donor: bytes.slice(33, 65), compatibility,
+    outcome: outcome as 1 | 2 | 3, geneTransferred: transferred === 1,
+    energyBefore: view.getBigUint64(69, true), energyAfter: view.getBigUint64(77, true),
+    encounterCount: view.getBigUint64(85, true), genome: bytes.slice(93, 125), memory: bytes.slice(125, 157),
+  };
+}
+
 export function randomBytes32(): Uint8Array {
   const bytes = new Uint8Array(BYTES32_LENGTH);
   crypto.getRandomValues(bytes);

@@ -1,0 +1,44 @@
+{
+  "checkedOn": "2026-10-14",
+  "network": "Thru Betanet",
+  "rpcUrl": "https://rpc.betanet.thru.org",
+  "programId": "taLnTXq4qblEsC-HkN4QG35Lp72Vnle8gk8UkiAtASymFD",
+  "walletAddress": "taPGuB7kndMDyU0aM1X8Wr-LDpFY-hsA3R119RgVLlU6VP",
+  "userReport": "Official wallet Encounter approval completed successfully",
+  "verificationMethod": "Read-only FULL transaction, configured-program event and actor account checks; no agent signing or submission",
+  "signature": "tsonwdWY2GvvEx08F9zWhbu4yYWJxhCCAOhyXJsbKGldlOwFCXKMLjeAdFY9HyGFDjBVq5q_nFyZhmsXNuc-1ABSDU",
+  "slot": "1679372",
+  "actorAddress": "taw-OSCiLcRGWDgSXtTlxBd4Aveq35C-LlACJTlwNYKFfo",
+  "donorAddress": "tai-7HXdqiXwfwVlQy9K14k2jDYmG7TuuxO5HS6oUe5A6n",
+  "vmError": 0,
+  "event": {
+    "tag": 2,
+    "payloadBytes": 157,
+    "compatibility": 128,
+    "outcome": "adaptation",
+    "energyBefore": "1232",
+    "energyAfter": "1264",
+    "encounterCount": "2",
+    "geneTransferred": true
+  },
+  "actorReadBack": {
+    "energy": "1264",
+    "encounterCount": "2",
+    "controllerMatchesSelectedWallet": true,
+    "ownerMatchesConfiguredProgram": true
+  },
+  "accountAccess": { "actor": "writable", "donor": "read-only" },
+  "receiptTotalsIncludingWalletAuthentication": {
+    "feeTHRU": "0",
+    "feePayer": "taNbZsKSCffNjdVSyyCWJuevUwJSTET1w6Ds8xzksV6Pco",
+    "computeUnits": 42495435,
+    "memoryUnits": 9,
+    "stateUnits": 0
+  },
+  "limitations": [
+    "One observed confirmed receipt is not a load test or throughput comparison",
+    "The observed zero fee does not guarantee all future or mainnet transactions are free",
+    "Desktop/mobile visual QA remains outstanding because browser automation was unavailable",
+    "No on-chain program change, merge or deployment is included"
+  ]
+}

@@ -26,9 +26,11 @@ import { UiIcon } from "./components/UiIcon";
 import { NetworkCard } from "./components/NetworkCard";
 import type { FaucetStage } from "./presentation-model";
 export { ReadStateCard } from "./components/ReadStateCard";
-import { BirthStatus, PulseStatus, FaucetStatus, TransactionNotice, StatusIcon, explorerLink } from "./components/TransactionFeedback";
+import { BirthStatus, PulseStatus, EncounterStatus, FaucetStatus, TransactionNotice, StatusIcon, explorerLink } from "./components/TransactionFeedback";
 import { PulseControls } from "./components/PulseControls";
+import { EncounterControls, EncounterResult } from "./components/EncounterControls";
 import { usePulse } from "./hooks/usePulse";
+import { useEncounter } from "./hooks/useEncounter";
 import { useOrganismCollection, type OrganismReadStatus } from "./hooks/useOrganisms";
 import { loadPendingBirth, savePendingBirth, clearPendingBirth } from "./birth-receipts";
 import markAsset from "./assets/cambrian-mark.svg";
@@ -687,17 +689,20 @@ function OrganismsContent({ onBalanceRefresh }: { onBalanceRefresh: () => void }
   const account = activeThruAddress(isConnected, selectedAccount?.address);
   const [refreshKey, setRefreshKey] = useState(0);
   const [selectedAddress, setSelectedAddress] = useState<string | null>(null);
-  const pulse = usePulse(() => { setRefreshKey(key => key + 1); onBalanceRefresh(); });
-  const organismRead = useOrganismCollection(refreshKey, pulse.receipt?.organism);
+  const [lastStateSource, setLastStateSource] = useState<"pulse" | "encounter">("pulse");
+  const pulse = usePulse(() => { setLastStateSource("pulse"); setRefreshKey(key => key + 1); onBalanceRefresh(); });
+  const encounter = useEncounter(() => { setLastStateSource("encounter"); setRefreshKey(key => key + 1); onBalanceRefresh(); });
+  const organismRead = useOrganismCollection(refreshKey, lastStateSource === "encounter" ? encounter.receipt?.organism : pulse.receipt?.organism);
   const organisms = organismRead.organisms;
-  const target = pulse.pending ? pulse.receipt?.organismAddress : selectedAddress;
-  const organism = (target ? organisms.find(item => item.address === target) : organisms[0]) ?? (pulse.pending ? undefined : organisms[0]);
+  const target = pulse.pending ? pulse.receipt?.organismAddress : encounter.pending ? encounter.receipt?.actorAddress : selectedAddress;
+  const organism = (target ? organisms.find(item => item.address === target) : organisms[0]) ?? (pulse.pending || encounter.pending ? undefined : organisms[0]);
+  const pendingAction = pulse.pending ? "Pulse" : encounter.pending ? "Encounter" : null;
   const statusCopy = organismStatusCopy(organismRead.status, organismRead.error);
 
   return (
     <>
       <DashboardPageActions><span className="connected-badge"><i /> THRU WALLET APPROVALS</span></DashboardPageActions>
-      {organisms.length > 1 && <div className="organism-selector"><label htmlFor="organism-selection">Selected organism</label><select id="organism-selection" value={organism?.address ?? ""} onChange={event => setSelectedAddress(event.target.value)} disabled={pulse.busy || pulse.pending}>{organisms.map(item => <option key={item.address} value={item.address}>{item.address.slice(0, 10)}…{item.address.slice(-6)} · {item.state.pulseCount.toString()} Pulses</option>)}</select><span>{organisms.length} owned by this wallet</span></div>}
+      {organisms.length > 1 && <div className="organism-selector"><label htmlFor="organism-selection">Selected organism</label><select id="organism-selection" value={organism?.address ?? ""} onChange={event => { encounter.cancelReview(); setSelectedAddress(event.target.value); }} disabled={pulse.busy || pulse.pending || encounter.busy || encounter.pending}>{organisms.map(item => <option key={item.address} value={item.address}>{item.address.slice(0, 10)}…{item.address.slice(-6)} · {item.state.pulseCount.toString()} Pulses</option>)}</select><span>{organisms.length} owned by this wallet</span></div>}
       {organism ? (
         <>
           <section className="organism-focus-card" aria-labelledby="focus-organism-title">
@@ -718,13 +723,19 @@ function OrganismsContent({ onBalanceRefresh }: { onBalanceRefresh: () => void }
             <article><span>VITALITY</span><strong>{organism.state.vitality.toString()}</strong><p>Value read from the current account state.</p></article>
             <article><span>PULSE COUNT</span><strong>{organism.state.pulseCount.toString()}</strong><p>Actions recorded by the organism.</p></article>
           </section>
-          {account && <PulseControls organism={organism} account={account} busy={pulse.busy} pending={pulse.pending} refreshKey={refreshKey} onPulse={() => void pulse.run(organism.address)} />}
+          {account && <PulseControls organism={organism} account={account} busy={pulse.busy} pending={pulse.pending} blocked={encounter.busy || encounter.pending} refreshKey={refreshKey} onPulse={() => { if (pulse.pending || (!encounter.busy && !encounter.pending)) { encounter.cancelReview(); encounter.dismissNotice(); void pulse.run(organism.address); } }} />}
         </>
       ) : (
-        <ReadStateCard title={pulse.pending ? "Reading the Pulse organism" : statusCopy[0]} description={pulse.pending ? "Your existing transaction is preserved. Use Check status below to read its receipt and state; no second transaction will be sent." : statusCopy[1]} tone={organismRead.status === "error" ? "error" : "neutral"} loading={organismRead.status === "loading" || organismRead.status === "idle"} onRetry={() => setRefreshKey(key => key + 1)} icon={organismRead.status === "needs-wallet" ? "wallet" : "organism"} action={!pulse.pending && ["needs-wallet", "empty"].includes(organismRead.status) ? <ReadStateAction status={organismRead.status} kind="organisms" /> : undefined} />
+        <ReadStateCard title={pendingAction ? `Reading the ${pendingAction} organism` : statusCopy[0]} description={pendingAction ? "Your existing transaction is preserved. Use Check status below to read its receipt and state; no second transaction will be sent." : statusCopy[1]} tone={organismRead.status === "error" ? "error" : "neutral"} loading={organismRead.status === "loading" || organismRead.status === "idle"} onRetry={() => setRefreshKey(key => key + 1)} icon={organismRead.status === "needs-wallet" ? "wallet" : "organism"} action={!pendingAction && ["needs-wallet", "empty"].includes(organismRead.status) ? <ReadStateAction status={organismRead.status} kind="organisms" /> : undefined} />
       )}
       <PulseStatus update={pulse.update} account={account} onCheck={pulse.pending ? () => void pulse.run(pulse.receipt!.organismAddress) : undefined} busy={pulse.busy} />
+      {organism && account && <EncounterControls organism={organism} organisms={organisms} account={account} prepared={encounter.prepared} busy={encounter.busy} reviewing={encounter.reviewing} pending={encounter.pending} blocked={pulse.busy || pulse.pending}
+        onReview={(actor, donor) => { if (!pulse.busy && !pulse.pending) { pulse.dismissNotice(); void encounter.review(actor, donor); } }}
+        onApprove={() => { if (!pulse.busy && !pulse.pending) void encounter.run(); }} onCancel={encounter.cancelReview} />}
+      <EncounterStatus update={encounter.update} account={account} onCheck={encounter.pending ? () => void encounter.run() : undefined} busy={encounter.busy} />
+      <EncounterResult receipt={encounter.receipt} />
       {pulse.notice && <TransactionNotice tone={pulse.update?.stage === "confirmed" ? "success" : pulse.update?.stage === "failed" ? "error" : "pending"} message={pulse.notice} onDismiss={pulse.dismissNotice} />}
+      {encounter.notice && <TransactionNotice tone={encounter.update?.stage === "confirmed" ? "success" : encounter.update?.stage === "failed" ? "error" : "pending"} message={encounter.notice} onDismiss={encounter.dismissNotice} />}
     </>
   );
 }

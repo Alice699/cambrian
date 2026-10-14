@@ -7,3 +7,5 @@ export * from "./read-service.js";
 export * from "./transfer.js";
 export * from "./transaction-service.js";
 export * from "./pulse-service.js";
+export * from "./encounter-model.js";
+export * from "./encounter-service.js";
