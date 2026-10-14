@@ -21,6 +21,7 @@ and account activity, and makes the organism transaction lifecycle visible.
 - Cursor-paginated Activity with 10 records per page, cached back navigation, and wallet-scoped refresh/retry
 - Wallet-approved Pulse with controller/state/slot preflight, the same four-stage stepper, verified trait read-back, and public-receipt-only pending recovery
 - Wallet-scoped organism selection; Overview defaults to the most recently active on-chain organism
+- Same-wallet Encounter with a live compatibility/risk review, explicit Thru Wallet approval, verified transaction event and actor read-back, and actual receipt resource totals
 
 Cambrian no longer offers a local wallet. Previously stored local vaults are
 not erased by this change; the removed source remains recoverable in Git history.
@@ -98,6 +99,46 @@ before broadcasting, disables ineligible actions, and explains expiry without
 changing or deleting old records. Pulse can consume energy and vitality and does
 not guarantee a mutation. To test an expired organism's flow, create a new organism
 in Overview, then open Organisms promptly and approve Pulse there.
+
+## Encounter
+
+Open Organisms, choose the organism to update, then choose a different partner
+from the same selected wallet. Review Encounter reads both current states without
+requesting approval or submitting. Compatibility compares all 256 genome bits:
+192 or more matching bits gives Symbiosis (+128 Energy), 96–191 gives Adaptation
+(+32), and fewer than 96 gives Stress (−96). Energy is bounded to 0–65,535.
+The two positive outcomes copy one selected bit from the partner; that bit can
+already match, so a visible mutation is not guaranteed. The partner is read-only.
+
+Both organisms must belong to the selected wallet and the configured program,
+and neither can be dead. Both states are rechecked before approval and again
+before submission. A competing action can still occur after these checks; the
+actual event determines the result. No automatic signing, sending or retry occurs.
+
+Completion requires a successful execution status, the exact managed-wallet
+Encounter call, a valid event emitted by the configured Cambrian program, and
+readable actor state with the expected controller and increased Encounter count.
+Delayed or incomplete evidence stays yellow. Pending recovery stores public
+receipt fields only, scoped to wallet, RPC and program; Check status only reads.
+The result panel separates the event snapshot from the latest account state,
+which may already include later actions. Activity names the Encounter action.
+
+Transaction resources display actual fee, fee payer and consumed compute,
+memory and state units. These totals include wallet authentication, not just
+Cambrian work, and are not a throughput comparison. Energy is an organism trait,
+not THRU. Encounter does not increase Generation or reset the 4,096-slot Pulse
+window. This same-wallet interaction is groundwork for the ecosystem, not a
+claim that this mechanic is unique to Thru.
+
+SDK and React DOM tests use an offline synthetic signer, never a real wallet or
+RPC. A user-approved live Encounter completed on 2026-10-14 at slot 1679372.
+Read-only RPC checks verified Adaptation at 128 matching bits, Energy 1232 to
+1264, Encounter count 2, the configured-program event, the actor's wallet
+controller and the read-only partner layout. Actual receipt totals were fee
+0 THRU, 42,495,435 compute units, 9 memory units and 0 state units, including
+wallet authentication. See the [public acceptance record](docs/encounter-acceptance.json).
+Real desktop/mobile visual review remains outstanding because browser automation
+was unavailable. No program upgrade or deployment is included in this feature.
 
 Existing organism accounts remain on-chain. A program upgrade does not
 automatically change their controller; any transfer must be separately reviewed

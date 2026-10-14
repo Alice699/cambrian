@@ -40,3 +40,17 @@ export function pulsePresentation(stage: BirthStage, hasSignature = false) {
 export function activeThruAddress(connected: boolean, address?: string | null): string | null {
   return connected && address ? address : null;
 }
+
+export function encounterPresentation(stage: BirthStage, hasSignature = false) {
+  const state = birthPresentation(stage, hasSignature);
+  const content: Partial<Record<BirthStage, [string, string]>> = {
+    preparing: ["Checking the reviewed pair", "Rechecking both organism states. No transaction has been submitted."],
+    "awaiting-approval": ["Approve Encounter in Thru Wallet", "Review the selected organism, partner and energy risk before approving."],
+    submitted: ["Waiting for Encounter confirmation", "Check this receipt instead of sending another Encounter."],
+    syncing: ["Confirmed · verifying Encounter", "Reading the actual Encounter event and updated organism state."],
+    confirmed: ["Encounter complete", "The transaction, its event and the current organism state have been verified on-chain."],
+    failed: ["Encounter was not completed", "Review the error before trying again. No automatic retry is sent."],
+  };
+  const [title, description] = content[stage] ?? [state.title, state.description];
+  return { ...state, title, description };
+}

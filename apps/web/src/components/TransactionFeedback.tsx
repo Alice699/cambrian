@@ -1,5 +1,5 @@
-import type { BirthTransactionUpdate, PulseTransactionUpdate, CambrianTransactionSummary } from "@cambrian/sdk";
-import { birthPresentation, pulsePresentation, type FeedbackTone } from "../transaction-model";
+import type { BirthTransactionUpdate, PulseTransactionUpdate, EncounterTransactionUpdate, CambrianTransactionSummary } from "@cambrian/sdk";
+import { birthPresentation, pulsePresentation, encounterPresentation, type FeedbackTone } from "../transaction-model";
 import { AddressDisplay } from "./AddressDisplay";
 import { UiIcon, type UiIconName } from "./UiIcon";
 import { explorerLink } from "../explorer";
@@ -58,11 +58,15 @@ export function PulseStatus(props: { update: PulseTransactionUpdate | null; acco
   return <OrganismTransactionStatus {...props} action="Pulse" />;
 }
 
+export function EncounterStatus(props: { update: EncounterTransactionUpdate | null; account: string | null; onCheck?: () => void; busy?: boolean }) {
+  return <OrganismTransactionStatus {...props} action="Encounter" />;
+}
+
 function OrganismTransactionStatus({ update, account, onCheck, busy = false, action }: {
-  update: BirthTransactionUpdate | PulseTransactionUpdate | null; account: string | null; onCheck?: () => void; busy?: boolean; action: "Birth" | "Pulse";
+  update: BirthTransactionUpdate | PulseTransactionUpdate | EncounterTransactionUpdate | null; account: string | null; onCheck?: () => void; busy?: boolean; action: "Birth" | "Pulse" | "Encounter";
 }) {
   if (!update) return null;
-  const state = (action === "Pulse" ? pulsePresentation : birthPresentation)(update.stage, Boolean(update.signature));
+  const state = (action === "Encounter" ? encounterPresentation : action === "Pulse" ? pulsePresentation : birthPresentation)(update.stage, Boolean(update.signature));
   return <section className={`birth-progress is-${state.tone}`} data-stage={update.stage} aria-label={`${action} transaction progress`}>
     <div className="birth-progress-heading" role={state.tone === "error" ? "alert" : "status"} aria-live="polite" aria-atomic="true">
       <StatusIcon tone={state.tone} spinning={state.tone === "pending"} />
@@ -78,7 +82,7 @@ function OrganismTransactionStatus({ update, account, onCheck, busy = false, act
           const failed = current && state.tone === "error";
           return <li key={step.label} className={complete ? "is-complete" : current ? `is-current${failed ? " is-error" : ""}` : "is-waiting"} aria-current={current ? "step" : undefined}>
             <span className="step-node" aria-hidden="true"><UiIcon name={complete ? "check" : failed ? "alert" : step.icon} /></span>
-            <span className="step-copy"><strong><span className="step-ordinal">0{index + 1}</span>{step.label}</strong><small>{complete ? action === "Pulse" && index === 3 ? "Updated Pulse state verified" : step.completed : current ? BIRTH_CURRENT_COPY[update.stage] : "Waiting for previous step"}</small></span>
+            <span className="step-copy"><strong><span className="step-ordinal">0{index + 1}</span>{action === "Encounter" && index === 3 ? "Verify result" : step.label}</strong><small>{complete ? action === "Encounter" && index === 3 ? "Encounter event and state verified" : action === "Pulse" && index === 3 ? "Updated Pulse state verified" : step.completed : current ? BIRTH_CURRENT_COPY[update.stage] : "Waiting for previous step"}</small></span>
           </li>;
         })}
       </ol>
